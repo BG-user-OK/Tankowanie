@@ -191,6 +191,9 @@
     if (message.includes("Missing endpoint API version") || message.includes("Incompatible endpoint API version")) {
       return "Endpoint Apps Script jest niezgodny z tą wersją aplikacji. Zaktualizuj istniejące wdrożenie Apps Script.";
     }
+    if (message.includes("TANKOWANIE_PIN is not configured in Apps Script")) {
+      return "Apps Script: ustaw PIN w Code.gs albo Script Properties.";
+    }
     if (message.includes("TANKOWANIE_PIN value is empty")) {
       return "Apps Script: właściwość TANKOWANIE_PIN istnieje, ale nie ma wartości.";
     }
@@ -688,16 +691,18 @@
         await sync.ping(settings);
         try {
           const props = await sync.debugProps(settings);
-          const visibleScriptKeys = Array.isArray(props && props.propertyKeys) ? props.propertyKeys : [];
-          const keyVisible = visibleScriptKeys.indexOf("TANKOWANIE_PIN") !== -1;
-          if (props && props.scriptHasTankowaniePinKey === false && (props.userHasTankowaniePinKey || props.documentHasTankowaniePinKey)) {
-            throw new Error("TANKOWANIE_PIN is not in Script Properties.");
-          }
-          if (props && props.hasTankowaniePinKey === false && !keyVisible) {
-            throw new Error("TANKOWANIE_PIN is not configured.");
-          }
-          if (props && (props.hasTankowaniePinValue === false || (props.hasTankowaniePinKey === false && keyVisible))) {
-            throw new Error("TANKOWANIE_PIN value is empty.");
+          if (!(props && props.pinConfigured === true)) {
+            const visibleScriptKeys = Array.isArray(props && props.propertyKeys) ? props.propertyKeys : [];
+            const keyVisible = visibleScriptKeys.indexOf("TANKOWANIE_PIN") !== -1;
+            if (props && props.scriptHasTankowaniePinKey === false && (props.userHasTankowaniePinKey || props.documentHasTankowaniePinKey)) {
+              throw new Error("TANKOWANIE_PIN is not in Script Properties.");
+            }
+            if (props && props.hasTankowaniePinKey === false && !keyVisible) {
+              throw new Error("TANKOWANIE_PIN is not configured.");
+            }
+            if (props && (props.hasTankowaniePinValue === false || (props.hasTankowaniePinKey === false && keyVisible))) {
+              throw new Error("TANKOWANIE_PIN value is empty.");
+            }
           }
         } catch (debugError) {
           const debugMessage = String(debugError && debugError.message || debugError);
