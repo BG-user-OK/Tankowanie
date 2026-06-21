@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=1.2.2">
+  <link rel="stylesheet" href="styles.css?v=1.2.3">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -64,25 +64,22 @@
           <button id="litersButton" class="field-button" type="button" aria-label="Ilość paliwa">
             <span class="field-main" id="litersValue">--</span>
           </button>
-          <div class="actions">
+          <div class="payment-action-row">
+            <div class="fuel-summary" aria-label="Podsumowanie płatności">
+              <div class="summary-part summary-pump">
+                <span>dystr.</span>
+                <strong id="pumpTotalValue">--</strong>
+              </div>
+              <div class="summary-part summary-discount">
+                <span>rabat</span>
+                <strong id="discountTotalValue">--</strong>
+              </div>
+              <div class="summary-part summary-paid">
+                <span>płacę</span>
+                <strong id="paidTotalValue">--</strong>
+              </div>
+            </div>
             <button id="saveButton" class="primary" type="button" aria-label="Zapisz lub wyślij">Zapisz</button>
-            <button id="syncButton" type="button" aria-label="Synchronizuj">Sync</button>
-            <button id="refreshButton" type="button" aria-label="Pobierz dane">Dane</button>
-          </div>
-        </div>
-
-        <div class="fuel-summary" aria-label="Podsumowanie płatności">
-          <div class="summary-part summary-pump">
-            <span>dystr.</span>
-            <strong id="pumpTotalValue">--</strong>
-          </div>
-          <div class="summary-part summary-discount">
-            <span>rabat</span>
-            <strong id="discountTotalValue">--</strong>
-          </div>
-          <div class="summary-part summary-paid">
-            <span>płacę</span>
-            <strong id="paidTotalValue">--</strong>
           </div>
         </div>
       </section>
@@ -112,6 +109,10 @@
             <span id="syncState">brak sync</span>
             <span id="queueState">kolejka: 0</span>
           </div>
+          <div class="queue-actions">
+            <button id="syncButton" type="button" aria-label="Synchronizuj">Sync</button>
+            <button id="refreshButton" type="button" aria-label="Pobierz dane">Dane</button>
+          </div>
           <button class="icon-button" id="settingsToggle" type="button" aria-label="Ustawienia synchronizacji">⚙</button>
         </div>
         <div id="queueList" class="queue-list">Brak wpisów w kolejce.</div>
@@ -133,15 +134,15 @@
     </main>
 
     <footer>
-      <span>v1.2.2</span>
+      <span>v1.2.3</span>
     </footer>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="storage.js?v=1.2.2"></script>
-  <script src="keypad.js?v=1.2.2"></script>
-  <script src="sync.js?v=1.2.2"></script>
-  <script src="app.js?v=1.2.2"></script>
+  <script src="storage.js?v=1.2.3"></script>
+  <script src="keypad.js?v=1.2.3"></script>
+  <script src="sync.js?v=1.2.3"></script>
+  <script src="app.js?v=1.2.3"></script>
 </body>
 </html>

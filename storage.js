@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v1.2.2";
+  const APP_VERSION = "v1.2.3";
   const API_VERSION = "TANKOWANIE_API_V1";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
@@ -60,6 +60,7 @@
       odometer: null,
       pumpPrice: null,
       discountPerLiter: null,
+      discountPerLiterEdited: false,
       liters: "",
       date: ""
     }, loadJSON(KEYS.draft, {}));

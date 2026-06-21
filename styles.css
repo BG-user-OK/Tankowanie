@@ -180,7 +180,13 @@ footer,
 }
 
 .liter-action-row {
-  grid-template-columns: minmax(104px, 0.8fr) minmax(0, 1.8fr);
+  grid-template-columns: minmax(104px, 0.65fr) minmax(0, 2.35fr);
+}
+
+.payment-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 74px;
+  gap: 6px;
 }
 
 label {
@@ -374,7 +380,7 @@ input {
   height: 100%;
 }
 
-.liter-action-row .actions button {
+.payment-action-row > .primary {
   min-height: 58px;
   padding: 6px;
   font-size: 13px;
@@ -430,10 +436,22 @@ button:active,
 
 .queue-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 42px;
+  grid-template-columns: auto minmax(0, 1fr) auto 42px;
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+}
+
+.queue-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 48px);
+  gap: 5px;
+}
+
+.queue-actions button {
+  min-height: 34px;
+  padding: 4px;
+  font-size: 11px;
 }
 
 h2 {
@@ -550,17 +568,27 @@ body.editing-discount footer {
   }
 
   .liter-action-row {
-    grid-template-columns: minmax(96px, 0.75fr) minmax(0, 1.85fr);
+    grid-template-columns: minmax(92px, 0.62fr) minmax(0, 2.38fr);
   }
 
-  .actions {
+  .payment-action-row {
+    grid-template-columns: minmax(0, 1fr) 66px;
     gap: 5px;
   }
 
-  .actions button {
+  .payment-action-row > .primary {
     min-height: 58px;
-    padding: 6px 5px;
+    padding: 6px 4px;
     font-size: 12px;
+  }
+
+  .queue-actions {
+    grid-template-columns: repeat(2, 43px);
+    gap: 4px;
+  }
+
+  .queue-actions button {
+    font-size: 10px;
   }
 
   .inline-keypad-grid button {
@@ -568,6 +596,6 @@ body.editing-discount footer {
   }
 
   .summary-part strong {
-    font-size: 15px;
+    font-size: 14px;
   }
 }

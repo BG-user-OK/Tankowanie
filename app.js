@@ -27,7 +27,8 @@
   }
 
   function parseDecimal(value) {
-    const normalized = String(value || "").replace(",", ".").trim();
+    const normalized = String(value === null || value === undefined ? "" : value).replace(",", ".").trim();
+    if (!normalized) return null;
     const numeric = Number(normalized);
     return Number.isFinite(numeric) ? numeric : null;
   }
@@ -90,8 +91,8 @@
   }
 
   function effectiveDiscount() {
-    const edited = parseDecimal(draft.discountPerLiter);
-    if (Number.isFinite(edited) && edited >= 0) return edited;
+    const edited = draft.discountPerLiterEdited ? parseDecimal(draft.discountPerLiter) : null;
+    if (edited !== null && Number.isFinite(edited) && edited >= 0) return edited;
     const fromSheet = Number(hints.discountPerLiter);
     return Number.isFinite(fromSheet) && fromSheet >= 0 ? fromSheet : 0.21;
   }
@@ -193,6 +194,9 @@
     if (message.includes("TANKOWANIE_PIN value is empty")) {
       return "Apps Script: właściwość TANKOWANIE_PIN istnieje, ale nie ma wartości.";
     }
+    if (message.includes("TANKOWANIE_PIN is not in Script Properties")) {
+      return "Apps Script: TANKOWANIE_PIN musi być zapisany we Właściwościach skryptu.";
+    }
     if (message.includes("TANKOWANIE_PIN is not configured")) {
       return "Apps Script: brak właściwości TANKOWANIE_PIN w tym endpoincie.";
     }
@@ -232,7 +236,7 @@
       keypad.setMode({
         mode: "discount",
         hint: hints.discountPerLiter,
-        value: draft.discountPerLiter
+        value: draft.discountPerLiterEdited ? draft.discountPerLiter : null
       });
       return;
     }
@@ -419,7 +423,11 @@
   }
 
   function applyConfig(config) {
-    hints.discountPerLiter = Number(config.discountPerLiter || hints.discountPerLiter || 0.21);
+    const sheetDiscount = parseDecimal(config.discountPerLiter);
+    const previousDiscount = parseDecimal(hints.discountPerLiter);
+    hints.discountPerLiter = sheetDiscount !== null && sheetDiscount >= 0
+      ? sheetDiscount
+      : previousDiscount !== null && previousDiscount >= 0 ? previousDiscount : 0.21;
     hints.latestOdometer = config.latestOdometer || hints.latestOdometer || null;
     hints.fuels = normalizeHints({ fuels: config.fuels || hints.fuels }).fuels;
     results.monthlyLabel = config.monthlyLabel || results.monthlyLabel || "";
@@ -503,6 +511,7 @@
     draft.odometer = null;
     draft.pumpPrice = null;
     draft.discountPerLiter = null;
+    draft.discountPerLiterEdited = false;
     draft.liters = "";
     draft.date = todayIso();
   }
@@ -596,16 +605,23 @@
   }
 
   function applyKeypadValue(payload) {
+    let shouldAdvanceToLiters = false;
     if (payload.mode === "price") {
       draft.pumpPrice = payload.hasInput ? Number(payload.value.toFixed(2)) : null;
+      shouldAdvanceToLiters = payload.hasInput && payload.inputLength >= 3 && !draft.liters;
     } else if (payload.mode === "discount") {
       draft.discountPerLiter = payload.hasInput ? Number(payload.value.toFixed(2)) : null;
+      draft.discountPerLiterEdited = !!payload.hasInput;
     } else if (payload.mode === "liters") {
       draft.liters = payload.hasInput ? payload.value.toFixed(2) : "";
     } else {
       draft.odometer = payload.hasInput ? Math.trunc(payload.value) : null;
     }
     saveAll();
+    if (shouldAdvanceToLiters) {
+      setActiveEdit("liters");
+      return;
+    }
     render();
   }
 
@@ -672,10 +688,15 @@
         await sync.ping(settings);
         try {
           const props = await sync.debugProps(settings);
-          if (props && props.hasTankowaniePinKey === false) {
+          const visibleScriptKeys = Array.isArray(props && props.propertyKeys) ? props.propertyKeys : [];
+          const keyVisible = visibleScriptKeys.indexOf("TANKOWANIE_PIN") !== -1;
+          if (props && props.scriptHasTankowaniePinKey === false && (props.userHasTankowaniePinKey || props.documentHasTankowaniePinKey)) {
+            throw new Error("TANKOWANIE_PIN is not in Script Properties.");
+          }
+          if (props && props.hasTankowaniePinKey === false && !keyVisible) {
             throw new Error("TANKOWANIE_PIN is not configured.");
           }
-          if (props && props.hasTankowaniePinValue === false) {
+          if (props && (props.hasTankowaniePinValue === false || (props.hasTankowaniePinKey === false && keyVisible))) {
             throw new Error("TANKOWANIE_PIN value is empty.");
           }
         } catch (debugError) {
@@ -683,6 +704,7 @@
           if (
             debugMessage.includes("TANKOWANIE_PIN is not configured")
             || debugMessage.includes("TANKOWANIE_PIN value is empty")
+            || debugMessage.includes("TANKOWANIE_PIN is not in Script Properties")
             || debugMessage.includes("endpoint API version")
           ) {
             throw debugError;
@@ -721,6 +743,7 @@
     cacheElements();
     if (!draft.date) draft.date = todayIso();
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
+    if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
     keypad.init({
       root: els.inlineKeypad,
       onChange: applyKeypadValue,

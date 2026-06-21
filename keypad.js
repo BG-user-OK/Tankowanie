@@ -121,6 +121,7 @@
       mode: active.mode,
       value: currentValue(),
       hasInput: active.entered.length > 0 || !active.baseIsHint,
+      inputLength: active.entered.length,
       displayHtml: displayHtml()
     };
     callbacks.onChange(payload);
