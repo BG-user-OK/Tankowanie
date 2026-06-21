@@ -1,0 +1,525 @@
+:root {
+  --bg: #000000;
+  --panel: #0d1117;
+  --panel-soft: #111827;
+  --panel-raised: #161b22;
+  --ink: #f4f7fb;
+  --muted: #8b949e;
+  --dim: rgba(139, 148, 158, 0.32);
+  --line: #2a313a;
+  --green: #10b981;
+  --green-dark: #34d399;
+  --yellow: #fef3c7;
+  --gold: #f59e0b;
+  --red: #f87171;
+  --shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(100%, 520px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 10px 12px 12px;
+}
+
+.sync-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.sync-strip span {
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #061b18;
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.result-band {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.result-band > div,
+.entry-panel,
+.inline-keypad,
+.settings-panel,
+.queue-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.result-band > div {
+  min-height: 82px;
+  padding: 10px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+
+.label,
+footer,
+.queue-list {
+  color: var(--muted);
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.result-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.result-value strong {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.result-unit {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.fuel-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fuel-switch button {
+  min-height: 52px;
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+.fuel-switch button.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #001f16;
+}
+
+.entry-panel,
+.inline-keypad,
+.settings-panel,
+.queue-panel {
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.field-row,
+.odometer-grid,
+.price-grid {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.odometer-grid,
+.price-grid {
+  grid-template-columns: minmax(0, 1fr) 112px;
+}
+
+label {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+input,
+.field-button,
+.distance-box,
+.discount-box {
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  color: var(--yellow);
+  padding: 8px 12px;
+}
+
+input {
+  color-scheme: dark;
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.field-button {
+  min-height: 68px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.field-button.active-edit,
+.discount-box.active-edit {
+  border-color: var(--green);
+  border-width: 2px;
+  background: #06231d;
+}
+
+.field-main {
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.entered-value,
+.entered-value .field-main,
+.field-main.entered-value {
+  color: var(--green-dark);
+}
+
+.pending-value,
+.pending-value .field-main,
+.field-main.pending-value {
+  color: var(--yellow);
+}
+
+.distance-box,
+.discount-box {
+  min-height: 68px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.distance-box strong,
+.discount-box strong {
+  font-size: 25px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.discount-box small {
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.discount-box strong {
+  color: var(--green-dark);
+}
+
+.distance-box span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.distance-box.empty strong {
+  color: var(--dim);
+}
+
+.field-main.empty,
+.empty {
+  color: var(--yellow);
+  opacity: 0.65;
+}
+
+.field-main.stale,
+.edit-hint.is-stale,
+.cursor-digit.is-stale {
+  color: var(--yellow);
+  opacity: 0.45;
+}
+
+.edit-hint {
+  color: rgba(254, 243, 199, 0.7);
+}
+
+.edit-entered {
+  color: var(--green-dark);
+}
+
+.cursor-digit {
+  display: inline-block;
+  min-width: 0.55em;
+  padding-bottom: 3px;
+  border-bottom: 4px solid var(--green);
+  color: var(--green-dark);
+  animation: cursorBlink 1s steps(2, start) infinite;
+}
+
+.unit {
+  color: var(--muted);
+  font-size: 0.55em;
+  font-weight: 900;
+}
+
+@keyframes cursorBlink {
+  50% {
+    border-bottom-color: transparent;
+  }
+}
+
+.fuel-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: -2px 0 10px;
+}
+
+.summary-part {
+  min-height: 54px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  padding: 8px;
+  overflow: hidden;
+}
+
+.summary-part span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.summary-part strong {
+  font-size: 18px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.summary-pump strong {
+  color: var(--red);
+}
+
+.summary-discount strong {
+  color: var(--gold);
+}
+
+.summary-paid strong {
+  color: var(--green-dark);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 8px;
+}
+
+.actions.compact {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
+}
+
+.icon-button,
+button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  color: var(--ink);
+  min-height: 44px;
+  padding: 10px 14px;
+  font-weight: 800;
+}
+
+.icon-button {
+  width: 46px;
+  padding: 0;
+  font-size: 23px;
+}
+
+button:active,
+.inline-keypad-grid button.pressed {
+  transform: translateY(1px) scale(0.98);
+}
+
+.inline-keypad-grid button.pressed {
+  background: var(--green);
+  border-color: var(--green);
+  color: #001f16;
+}
+
+.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #001f16;
+}
+
+.settings-panel[hidden] {
+  display: none;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.queue-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.queue-item:first-child {
+  border-top: 0;
+}
+
+footer {
+  display: flex;
+  justify-content: center;
+  padding: 8px 2px 4px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: min(92vw, 460px);
+  transform: translateX(-50%);
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f4f7fb;
+  color: #111827;
+  box-shadow: var(--shadow);
+  font-weight: 800;
+  z-index: 30;
+}
+
+.inline-keypad {
+  background: rgba(7, 10, 14, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.inline-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.inline-keypad-grid button {
+  min-height: 75px;
+  padding: 0;
+  font-size: 28px;
+  background: #111827;
+  transition: background-color 90ms ease, color 90ms ease, transform 80ms ease;
+}
+
+.inline-keypad-grid .utility {
+  color: var(--red);
+}
+
+.inline-keypad-grid .ok {
+  background: var(--green);
+  border-color: var(--green);
+  color: #001f16;
+  font-size: 20px;
+}
+
+body.editing-discount .result-band,
+body.editing-discount .sync-strip,
+body.editing-discount .fuel-switch,
+body.editing-discount #refuelDate,
+body.editing-discount #odometerButton,
+body.editing-discount .distance-box,
+body.editing-discount #priceButton,
+body.editing-discount #litersButton,
+body.editing-discount .fuel-summary,
+body.editing-discount .actions,
+body.editing-discount .queue-panel,
+body.editing-discount .settings-panel,
+body.editing-discount footer {
+  opacity: 0.35;
+}
+
+@media (max-width: 390px) {
+  .app-shell {
+    padding: 10px 10px 12px;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
+
+  .field-main {
+    font-size: 31px;
+  }
+
+  .odometer-grid,
+  .price-grid {
+    grid-template-columns: minmax(0, 1fr) 104px;
+  }
+
+  .inline-keypad-grid button {
+    min-height: 72px;
+  }
+
+  .summary-part strong {
+    font-size: 16px;
+  }
+}

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Tankowanie</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css?v=1.2.0">
+  <link rel="icon" href="icons/icon-192.png">
+</head>
+<body>
+  <div class="app-shell">
+    <main>
+      <section class="sync-strip" aria-live="polite">
+        <span id="onlineState">offline</span>
+        <span id="syncState">brak synchronizacji</span>
+        <span id="queueState">kolejka: 0</span>
+      </section>
+
+      <section class="result-band">
+        <div>
+          <span class="label">Ostatnie spalanie</span>
+          <div class="result-value">
+            <strong id="lastLpgResult">--</strong>
+            <span class="result-unit">l/100 km</span>
+          </div>
+          <span id="lastSheetRead" class="visually-hidden">brak danych</span>
+        </div>
+        <div>
+          <span class="label" id="monthlyHeading">średnio Czerwiec</span>
+          <div class="result-value">
+            <strong id="monthlyAverage">--</strong>
+            <span class="result-unit">l/100 km</span>
+          </div>
+          <span id="monthlyLabel" class="visually-hidden">z arkusza</span>
+        </div>
+      </section>
+
+      <section class="fuel-switch" aria-label="Wybór paliwa">
+        <button id="fuelLpg" type="button" data-fuel="LPG" class="active">LPG</button>
+        <button id="fuelE98" type="button" data-fuel="E98">Verva 98 / E98</button>
+      </section>
+
+      <section class="entry-panel">
+        <div class="field-row">
+          <input id="refuelDate" class="entered-value" type="date" aria-label="Data tankowania">
+        </div>
+
+        <div class="odometer-grid">
+          <button id="odometerButton" class="field-button" type="button" aria-label="Licznik">
+            <span class="field-main" id="odometerValue">--</span>
+          </button>
+          <div class="distance-box" aria-label="Dystans od ostatniego tankowania">
+            <strong id="distanceValue">--</strong>
+            <span>km</span>
+          </div>
+        </div>
+
+        <div class="price-grid">
+          <button id="priceButton" class="field-button" type="button" aria-label="Cena z dystrybutora">
+            <span class="field-main" id="pumpPriceValue">--</span>
+          </button>
+          <button id="discountButton" class="discount-box" type="button" aria-label="Rabat">
+            <small id="discountValue">-0,21</small>
+            <strong id="paidPriceValue">--</strong>
+          </button>
+        </div>
+
+        <div class="field-row">
+          <button id="litersButton" class="field-button" type="button" aria-label="Ilość paliwa">
+            <span class="field-main" id="litersValue">--</span>
+          </button>
+        </div>
+
+        <div class="fuel-summary" aria-label="Podsumowanie płatności">
+          <div class="summary-part summary-pump">
+            <span>dystrybutor</span>
+            <strong id="pumpTotalValue">--</strong>
+          </div>
+          <div class="summary-part summary-discount">
+            <span>rabat</span>
+            <strong id="discountTotalValue">--</strong>
+          </div>
+          <div class="summary-part summary-paid">
+            <span>płacę</span>
+            <strong id="paidTotalValue">--</strong>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="saveButton" class="primary" type="button">Zapisz / wyślij</button>
+          <button id="syncButton" type="button">Synchronizuj</button>
+          <button id="refreshButton" type="button">Pobierz dane</button>
+        </div>
+      </section>
+
+      <section class="inline-keypad" id="inlineKeypad" aria-label="Klawiatura">
+        <div class="inline-keypad-grid">
+          <button type="button" data-key="1">1</button>
+          <button type="button" data-key="2">2</button>
+          <button type="button" data-key="3">3</button>
+          <button type="button" data-key="4">4</button>
+          <button type="button" data-key="5">5</button>
+          <button type="button" data-key="6">6</button>
+          <button type="button" data-key="7">7</button>
+          <button type="button" data-key="8">8</button>
+          <button type="button" data-key="9">9</button>
+          <button type="button" class="utility" data-key="back">⌫</button>
+          <button type="button" data-key="0">0</button>
+          <button type="button" class="ok" data-key="ok">OK</button>
+        </div>
+      </section>
+
+      <section class="queue-panel">
+        <div class="queue-header">
+          <h2>Kolejka offline</h2>
+          <button class="icon-button" id="settingsToggle" type="button" aria-label="Ustawienia synchronizacji">⚙</button>
+        </div>
+        <div id="queueList" class="queue-list">Brak wpisów w kolejce.</div>
+      </section>
+
+      <section class="settings-panel" id="settingsPanel" hidden>
+        <h2>Synchronizacja</h2>
+        <label for="endpointInput">Apps Script URL</label>
+        <input id="endpointInput" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec">
+
+        <label for="pinInput">PIN</label>
+        <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN z Apps Script">
+
+        <div class="actions compact">
+          <button id="saveSettingsButton" type="button">Zapisz ustawienia</button>
+          <button id="testSettingsButton" type="button">Test</button>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>v1.2.0</span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="storage.js?v=1.2.0"></script>
+  <script src="keypad.js?v=1.2.0"></script>
+  <script src="sync.js?v=1.2.0"></script>
+  <script src="app.js?v=1.2.0"></script>
+</body>
+</html>

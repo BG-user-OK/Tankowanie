@@ -1,0 +1,29 @@
+# Local credentials and secrets
+/secrets/
+**/*service-account*.json
+**/*credentials*.json
+**/*credential*.json
+**/*key*.json
+.env
+.env.*
+!.env.example
+
+# Local-only project context and exports
+/agents.md
+/AGENTS*.txt
+/apps-script/
+/poprzednie wersje/
+/v*/
+
+# Local environments and caches
+.venv/
+__pycache__/
+.pytest_cache/
+.cache/
+*.pyc
+
+# Runtime noise
+*.log
+*.tmp
+*.temp
+~$*
