@@ -1,12 +1,12 @@
-const CACHE_NAME = "tankowanie-v1.2.3";
+const CACHE_NAME = "tankowanie-v1.2.4";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=1.2.3",
-  "./storage.js?v=1.2.3",
-  "./keypad.js?v=1.2.3",
-  "./sync.js?v=1.2.3",
-  "./app.js?v=1.2.3",
+  "./styles.css?v=1.2.4",
+  "./storage.js?v=1.2.4",
+  "./keypad.js?v=1.2.4",
+  "./sync.js?v=1.2.4",
+  "./app.js?v=1.2.4",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
