@@ -5,6 +5,27 @@
     return String(url || "").trim();
   }
 
+  function appVersion() {
+    return window.TankowanieStorage.APP_VERSION;
+  }
+
+  function apiVersion() {
+    return window.TankowanieStorage.API_VERSION;
+  }
+
+  function withClientMeta(params) {
+    return Object.assign({
+      appVersion: appVersion(),
+      apiVersion: apiVersion()
+    }, params || {});
+  }
+
+  function assertApiCompatible(response) {
+    if (!response || response.ok !== true) return;
+    if (!response.apiVersion) throw new Error("Missing endpoint API version.");
+    if (response.apiVersion !== apiVersion()) throw new Error("Incompatible endpoint API version.");
+  }
+
   function jsonpRequest(url, params) {
     const endpoint = normalizeUrl(url);
     if (!endpoint) return Promise.reject(new Error("Missing Apps Script URL."));
@@ -35,36 +56,36 @@
   }
 
   async function getConfig(settings) {
-    const response = await jsonpRequest(settings.endpointUrl, {
+    const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
       action: "config",
-      pin: settings.pin,
-      appVersion: window.TankowanieStorage.APP_VERSION
-    });
+      pin: settings.pin
+    }));
     if (!response || response.ok !== true) {
       throw new Error(response && response.error ? response.error : "Config failed.");
     }
+    assertApiCompatible(response);
     return response;
   }
 
   async function ping(settings) {
-    const response = await jsonpRequest(settings.endpointUrl, {
-      action: "ping",
-      appVersion: window.TankowanieStorage.APP_VERSION
-    });
+    const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
+      action: "ping"
+    }));
     if (!response || response.ok !== true) {
       throw new Error(response && response.error ? response.error : "Ping failed.");
     }
+    assertApiCompatible(response);
     return response;
   }
 
   async function debugProps(settings) {
-    const response = await jsonpRequest(settings.endpointUrl, {
-      action: "debugProps",
-      appVersion: window.TankowanieStorage.APP_VERSION
-    });
+    const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
+      action: "debugProps"
+    }));
     if (!response || response.ok !== true) {
       throw new Error(response && response.error ? response.error : "Debug failed.");
     }
+    assertApiCompatible(response);
     return response;
   }
 
@@ -72,17 +93,19 @@
     const delays = [700, 1200, 2200, 4000, 6500];
     for (const delay of delays) {
       await new Promise(function (resolve) { setTimeout(resolve, delay); });
-      const response = await jsonpRequest(settings.endpointUrl, {
+      const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
         action: "receipt",
         pin: settings.pin,
         requestId
-      });
+      }));
       if (response && response.ok === true && response.found) {
+        assertApiCompatible(response);
         return response.receipt;
       }
       if (response && response.ok === false) {
         throw new Error(response.error || "Receipt failed.");
       }
+      assertApiCompatible(response);
     }
     throw new Error("No write receipt from Apps Script.");
   }
@@ -96,6 +119,8 @@
       headers: { "Content-Type": "text/plain" },
       body: JSON.stringify({
         action: "submitRefuel",
+        appVersion: appVersion(),
+        apiVersion: apiVersion(),
         pin: settings.pin,
         requestId,
         entry

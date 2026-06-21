@@ -1,7 +1,8 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v1.2.1";
+  const APP_VERSION = "v1.2.2";
+  const API_VERSION = "TANKOWANIE_API_V1";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
     settings: `${PREFIX}_settings`,
@@ -109,6 +110,7 @@
 
   window.TankowanieStorage = {
     APP_VERSION,
+    API_VERSION,
     createId,
     getDeviceId,
     getSettings,

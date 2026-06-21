@@ -187,6 +187,12 @@
 
   function friendlySyncError(error) {
     const message = String(error && error.message ? error.message : error || "");
+    if (message.includes("Missing endpoint API version") || message.includes("Incompatible endpoint API version")) {
+      return "Endpoint Apps Script jest niezgodny z tą wersją aplikacji. Zaktualizuj istniejące wdrożenie Apps Script.";
+    }
+    if (message.includes("TANKOWANIE_PIN value is empty")) {
+      return "Apps Script: właściwość TANKOWANIE_PIN istnieje, ale nie ma wartości.";
+    }
     if (message.includes("TANKOWANIE_PIN is not configured")) {
       return "Apps Script: brak właściwości TANKOWANIE_PIN w tym endpoincie.";
     }
@@ -666,11 +672,19 @@
         await sync.ping(settings);
         try {
           const props = await sync.debugProps(settings);
-          if (props && props.hasTankowaniePin === false) {
+          if (props && props.hasTankowaniePinKey === false) {
             throw new Error("TANKOWANIE_PIN is not configured.");
           }
+          if (props && props.hasTankowaniePinValue === false) {
+            throw new Error("TANKOWANIE_PIN value is empty.");
+          }
         } catch (debugError) {
-          if (String(debugError && debugError.message || debugError).includes("TANKOWANIE_PIN is not configured")) {
+          const debugMessage = String(debugError && debugError.message || debugError);
+          if (
+            debugMessage.includes("TANKOWANIE_PIN is not configured")
+            || debugMessage.includes("TANKOWANIE_PIN value is empty")
+            || debugMessage.includes("endpoint API version")
+          ) {
             throw debugError;
           }
         }
