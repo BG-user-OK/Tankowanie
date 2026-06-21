@@ -6,48 +6,41 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=1.2.0">
+  <link rel="stylesheet" href="styles.css?v=1.2.1">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
   <div class="app-shell">
     <main>
-      <section class="sync-strip" aria-live="polite">
-        <span id="onlineState">offline</span>
-        <span id="syncState">brak synchronizacji</span>
-        <span id="queueState">kolejka: 0</span>
-      </section>
-
-      <section class="result-band">
-        <div>
-          <span class="label">Ostatnie spalanie</span>
-          <div class="result-value">
-            <strong id="lastLpgResult">--</strong>
-            <span class="result-unit">l/100 km</span>
+      <section class="top-row">
+        <div class="result-band">
+          <div>
+            <span class="label">Ostatnie</span>
+            <div class="result-value">
+              <strong id="lastLpgResult">--</strong>
+              <span class="result-unit">l/100</span>
+            </div>
+            <span id="lastSheetRead" class="visually-hidden">brak danych</span>
           </div>
-          <span id="lastSheetRead" class="visually-hidden">brak danych</span>
-        </div>
-        <div>
-          <span class="label" id="monthlyHeading">średnio Czerwiec</span>
-          <div class="result-value">
-            <strong id="monthlyAverage">--</strong>
-            <span class="result-unit">l/100 km</span>
+          <div>
+            <span class="label" id="monthlyHeading">średnio Czerwiec</span>
+            <div class="result-value">
+              <strong id="monthlyAverage">--</strong>
+              <span class="result-unit">l/100</span>
+            </div>
+            <span id="monthlyLabel" class="visually-hidden">z arkusza</span>
           </div>
-          <span id="monthlyLabel" class="visually-hidden">z arkusza</span>
         </div>
-      </section>
 
-      <section class="fuel-switch" aria-label="Wybór paliwa">
-        <button id="fuelLpg" type="button" data-fuel="LPG" class="active">LPG</button>
-        <button id="fuelE98" type="button" data-fuel="E98">Verva 98 / E98</button>
+        <div class="fuel-switch" aria-label="Wybór paliwa">
+          <button id="fuelLpg" type="button" data-fuel="LPG" class="active">LPG</button>
+          <button id="fuelE98" type="button" data-fuel="E98" aria-label="Benzyna Verva 98 / E98">E98</button>
+        </div>
       </section>
 
       <section class="entry-panel">
-        <div class="field-row">
+        <div class="meter-row">
           <input id="refuelDate" class="entered-value" type="date" aria-label="Data tankowania">
-        </div>
-
-        <div class="odometer-grid">
           <button id="odometerButton" class="field-button" type="button" aria-label="Licznik">
             <span class="field-main" id="odometerValue">--</span>
           </button>
@@ -67,15 +60,20 @@
           </button>
         </div>
 
-        <div class="field-row">
+        <div class="liter-action-row">
           <button id="litersButton" class="field-button" type="button" aria-label="Ilość paliwa">
             <span class="field-main" id="litersValue">--</span>
           </button>
+          <div class="actions">
+            <button id="saveButton" class="primary" type="button" aria-label="Zapisz lub wyślij">Zapisz</button>
+            <button id="syncButton" type="button" aria-label="Synchronizuj">Sync</button>
+            <button id="refreshButton" type="button" aria-label="Pobierz dane">Dane</button>
+          </div>
         </div>
 
         <div class="fuel-summary" aria-label="Podsumowanie płatności">
           <div class="summary-part summary-pump">
-            <span>dystrybutor</span>
+            <span>dystr.</span>
             <strong id="pumpTotalValue">--</strong>
           </div>
           <div class="summary-part summary-discount">
@@ -86,12 +84,6 @@
             <span>płacę</span>
             <strong id="paidTotalValue">--</strong>
           </div>
-        </div>
-
-        <div class="actions">
-          <button id="saveButton" class="primary" type="button">Zapisz / wyślij</button>
-          <button id="syncButton" type="button">Synchronizuj</button>
-          <button id="refreshButton" type="button">Pobierz dane</button>
         </div>
       </section>
 
@@ -114,7 +106,12 @@
 
       <section class="queue-panel">
         <div class="queue-header">
-          <h2>Kolejka offline</h2>
+          <h2>Kolejka</h2>
+          <div class="sync-strip" aria-live="polite">
+            <span id="onlineState">offline</span>
+            <span id="syncState">brak sync</span>
+            <span id="queueState">kolejka: 0</span>
+          </div>
           <button class="icon-button" id="settingsToggle" type="button" aria-label="Ustawienia synchronizacji">⚙</button>
         </div>
         <div id="queueList" class="queue-list">Brak wpisów w kolejce.</div>
@@ -136,15 +133,15 @@
     </main>
 
     <footer>
-      <span>v1.2.0</span>
+      <span>v1.2.1</span>
     </footer>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="storage.js?v=1.2.0"></script>
-  <script src="keypad.js?v=1.2.0"></script>
-  <script src="sync.js?v=1.2.0"></script>
-  <script src="app.js?v=1.2.0"></script>
+  <script src="storage.js?v=1.2.1"></script>
+  <script src="keypad.js?v=1.2.1"></script>
+  <script src="sync.js?v=1.2.1"></script>
+  <script src="app.js?v=1.2.1"></script>
 </body>
 </html>

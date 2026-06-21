@@ -36,18 +36,27 @@ input {
   width: min(100%, 520px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: 10px 12px 12px;
+  padding: 8px 10px 10px;
+}
+
+.top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 98px;
+  gap: 6px;
+  align-items: stretch;
+  margin-bottom: 6px;
 }
 
 .sync-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .sync-strip span {
   min-height: 30px;
+  padding: 0 4px;
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
@@ -62,8 +71,8 @@ input {
 .result-band {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .result-band > div,
@@ -77,11 +86,11 @@ input {
 }
 
 .result-band > div {
-  min-height: 82px;
-  padding: 10px;
+  min-height: 72px;
+  padding: 8px;
   display: grid;
   align-content: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .label,
@@ -91,7 +100,7 @@ footer,
 }
 
 .label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -99,18 +108,18 @@ footer,
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
 }
 
 .result-value strong {
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
   color: var(--ink);
 }
 
 .result-unit {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -127,12 +136,14 @@ footer,
 .fuel-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .fuel-switch button {
-  min-height: 52px;
+  min-height: 72px;
+  padding: 0;
+  font-size: 14px;
   background: var(--panel-soft);
   color: var(--muted);
 }
@@ -147,21 +158,29 @@ footer,
 .inline-keypad,
 .settings-panel,
 .queue-panel {
-  padding: 12px;
-  margin-bottom: 10px;
+  padding: 8px;
+  margin-bottom: 6px;
 }
 
 .field-row,
-.odometer-grid,
-.price-grid {
+.meter-row,
+.price-grid,
+.liter-action-row {
   display: grid;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
-.odometer-grid,
+.meter-row {
+  grid-template-columns: 118px minmax(0, 1fr) 72px;
+}
+
 .price-grid {
-  grid-template-columns: minmax(0, 1fr) 112px;
+  grid-template-columns: minmax(0, 1fr) 104px;
+}
+
+.liter-action-row {
+  grid-template-columns: minmax(104px, 0.8fr) minmax(0, 1.8fr);
 }
 
 label {
@@ -175,22 +194,22 @@ input,
 .distance-box,
 .discount-box {
   width: 100%;
-  min-height: 58px;
+  min-height: 54px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-raised);
   color: var(--yellow);
-  padding: 8px 12px;
+  padding: 7px 10px;
 }
 
 input {
   color-scheme: dark;
-  font-size: 21px;
+  font-size: 16px;
   font-weight: 800;
 }
 
 .field-button {
-  min-height: 68px;
+  min-height: 58px;
   display: grid;
   place-items: center;
   text-align: center;
@@ -204,7 +223,7 @@ input {
 }
 
 .field-main {
-  font-size: 34px;
+  font-size: 30px;
   font-weight: 900;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -224,7 +243,7 @@ input {
 
 .distance-box,
 .discount-box {
-  min-height: 68px;
+  min-height: 58px;
   display: grid;
   place-items: center;
   align-content: center;
@@ -234,7 +253,7 @@ input {
 
 .distance-box strong,
 .discount-box strong {
-  font-size: 25px;
+  font-size: 22px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -306,19 +325,19 @@ input {
 .fuel-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: -2px 0 10px;
+  gap: 6px;
+  margin: 0;
 }
 
 .summary-part {
-  min-height: 54px;
+  min-height: 46px;
   display: grid;
   align-content: center;
-  gap: 3px;
+  gap: 2px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-raised);
-  padding: 8px;
+  padding: 6px;
   overflow: hidden;
 }
 
@@ -330,7 +349,7 @@ input {
 }
 
 .summary-part strong {
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -350,8 +369,15 @@ input {
 
 .actions {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: 1.1fr 0.9fr 0.9fr;
+  gap: 6px;
+  height: 100%;
+}
+
+.liter-action-row .actions button {
+  min-height: 58px;
+  padding: 6px;
+  font-size: 13px;
 }
 
 .actions.compact {
@@ -366,14 +392,14 @@ button {
   background: var(--panel-raised);
   color: var(--ink);
   min-height: 44px;
-  padding: 10px 14px;
+  padding: 8px 10px;
   font-weight: 800;
 }
 
 .icon-button {
-  width: 46px;
+  width: 42px;
   padding: 0;
-  font-size: 23px;
+  font-size: 21px;
 }
 
 button:active,
@@ -403,24 +429,24 @@ button:active,
 }
 
 .queue-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 42px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 13px;
   letter-spacing: 0;
 }
 
 .queue-item {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 8px;
-  padding: 8px 0;
+  gap: 6px;
+  padding: 6px 0;
   border-top: 1px solid var(--line);
 }
 
@@ -499,27 +525,49 @@ body.editing-discount footer {
 
 @media (max-width: 390px) {
   .app-shell {
-    padding: 10px 10px 12px;
+    padding: 7px 8px 10px;
   }
 
-  .actions {
-    grid-template-columns: 1fr;
+  .top-row {
+    grid-template-columns: minmax(0, 1fr) 88px;
+  }
+
+  .fuel-switch button {
+    min-height: 66px;
+    font-size: 13px;
   }
 
   .field-main {
-    font-size: 31px;
+    font-size: 27px;
   }
 
-  .odometer-grid,
+  .meter-row {
+    grid-template-columns: 112px minmax(0, 1fr) 64px;
+  }
+
   .price-grid {
-    grid-template-columns: minmax(0, 1fr) 104px;
+    grid-template-columns: minmax(0, 1fr) 96px;
+  }
+
+  .liter-action-row {
+    grid-template-columns: minmax(96px, 0.75fr) minmax(0, 1.85fr);
+  }
+
+  .actions {
+    gap: 5px;
+  }
+
+  .actions button {
+    min-height: 58px;
+    padding: 6px 5px;
+    font-size: 12px;
   }
 
   .inline-keypad-grid button {
-    min-height: 72px;
+    min-height: 70px;
   }
 
   .summary-part strong {
-    font-size: 16px;
+    font-size: 15px;
   }
 }

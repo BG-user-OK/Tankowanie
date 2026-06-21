@@ -185,6 +185,23 @@
     }, 3200);
   }
 
+  function friendlySyncError(error) {
+    const message = String(error && error.message ? error.message : error || "");
+    if (message.includes("TANKOWANIE_PIN is not configured")) {
+      return "Apps Script: brak właściwości TANKOWANIE_PIN w tym endpoincie.";
+    }
+    if (message.includes("Wrong PIN")) {
+      return "PIN nie pasuje do ustawienia TANKOWANIE_PIN.";
+    }
+    if (message.includes("Missing Apps Script URL")) {
+      return "Uzupełnij Apps Script URL.";
+    }
+    if (message.includes("Network error")) {
+      return "Brak połączenia z endpointem Apps Script.";
+    }
+    return message || "Błąd synchronizacji.";
+  }
+
   function updateOnlineState() {
     els.onlineState.textContent = navigator.onLine ? "online" : "offline";
   }
@@ -374,8 +391,8 @@
 
     els.endpointInput.value = settings.endpointUrl || "";
     els.pinInput.value = settings.pin || "";
-    els.syncState.textContent = results.lastSyncAt ? `sync: ${results.lastSyncAt}` : "brak synchronizacji";
-    els.queueState.textContent = `kolejka: ${queue.length}`;
+    els.syncState.textContent = results.lastSyncAt ? `sync ${results.lastSyncAt}` : "brak sync";
+    els.queueState.textContent = `q: ${queue.length}`;
     renderQueue();
     updateOnlineState();
   }
@@ -423,6 +440,11 @@
     const config = await sync.getConfig(syncSettings);
     applyConfig(config);
     if (!silent) toast("Dane pobrane z arkusza.");
+    return config;
+  }
+
+  async function verifySyncReady(syncSettings) {
+    const config = await sync.getConfig(syncSettings);
     return config;
   }
 
@@ -495,6 +517,7 @@
         return;
       }
       try {
+        await verifySyncReady(syncSettings);
         const receipt = await sync.submitEntry(syncSettings, entry);
         applyReceipt(receipt);
       } catch (syncError) {
@@ -502,7 +525,7 @@
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
-        toast(syncError.message || "Nie udało się wysłać. Wpis został w kolejce.");
+        toast(`Wpis został w kolejce. ${friendlySyncError(syncError)}`);
         return;
       }
       clearEntryDraft();
@@ -538,6 +561,13 @@
       render();
       return;
     }
+    try {
+      const config = await verifySyncReady(syncSettings);
+      applyConfig(config);
+    } catch (error) {
+      toast(friendlySyncError(error));
+      return;
+    }
     let sent = 0;
     let remaining = [];
     for (let index = 0; index < queue.length; index += 1) {
@@ -548,7 +578,7 @@
         sent += 1;
       } catch (error) {
         remaining = queue.slice(index);
-        toast(error.message || "Część wpisów została w kolejce.");
+        toast(friendlySyncError(error) || "Część wpisów została w kolejce.");
         break;
       }
     }
@@ -611,7 +641,7 @@
     els.syncButton.addEventListener("click", syncQueue);
     els.refreshButton.addEventListener("click", function () {
       refreshConfig().catch(function (error) {
-        toast(error.message || "Nie udało się pobrać danych.");
+        toast(friendlySyncError(error) || "Nie udało się pobrać danych.");
       });
     });
 
@@ -633,9 +663,20 @@
       settings.pin = els.pinInput.value.trim();
       storage.saveSettings(settings);
       try {
+        await sync.ping(settings);
+        try {
+          const props = await sync.debugProps(settings);
+          if (props && props.hasTankowaniePin === false) {
+            throw new Error("TANKOWANIE_PIN is not configured.");
+          }
+        } catch (debugError) {
+          if (String(debugError && debugError.message || debugError).includes("TANKOWANIE_PIN is not configured")) {
+            throw debugError;
+          }
+        }
         await refreshConfig();
       } catch (error) {
-        toast(error.message || "Test nieudany.");
+        toast(friendlySyncError(error) || "Test nieudany.");
       }
     });
   }

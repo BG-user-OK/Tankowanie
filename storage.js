@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v1.2.0";
+  const APP_VERSION = "v1.2.1";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
     settings: `${PREFIX}_settings`,

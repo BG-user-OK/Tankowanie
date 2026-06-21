@@ -46,6 +46,28 @@
     return response;
   }
 
+  async function ping(settings) {
+    const response = await jsonpRequest(settings.endpointUrl, {
+      action: "ping",
+      appVersion: window.TankowanieStorage.APP_VERSION
+    });
+    if (!response || response.ok !== true) {
+      throw new Error(response && response.error ? response.error : "Ping failed.");
+    }
+    return response;
+  }
+
+  async function debugProps(settings) {
+    const response = await jsonpRequest(settings.endpointUrl, {
+      action: "debugProps",
+      appVersion: window.TankowanieStorage.APP_VERSION
+    });
+    if (!response || response.ok !== true) {
+      throw new Error(response && response.error ? response.error : "Debug failed.");
+    }
+    return response;
+  }
+
   async function waitForReceipt(settings, requestId) {
     const delays = [700, 1200, 2200, 4000, 6500];
     for (const delay of delays) {
@@ -88,7 +110,8 @@
 
   window.TankowanieSync = {
     getConfig,
+    ping,
+    debugProps,
     submitEntry
   };
 })();
-
