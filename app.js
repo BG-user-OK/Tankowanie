@@ -534,15 +534,15 @@
     setValueState(els.odometerButton, !!draft.odometer);
 
     if (priceActive) {
-      els.pumpPriceValue.innerHTML = `${keypad.getDisplayHtml()} <span class="unit">zł</span>`;
+      els.pumpPriceValue.innerHTML = `${keypad.getDisplayHtml()} <span class="unit">zł/litr</span>`;
       els.pumpPriceValue.classList.toggle("stale", !draft.pumpPrice && !!priceHint);
       els.pumpPriceValue.classList.toggle("empty", !draft.pumpPrice && !priceHint);
     } else if (draft.pumpPrice) {
-      els.pumpPriceValue.innerHTML = `${money(draft.pumpPrice)} <span class="unit">zł</span>`;
+      els.pumpPriceValue.innerHTML = `${money(draft.pumpPrice)} <span class="unit">zł/litr</span>`;
       els.pumpPriceValue.classList.remove("stale", "empty");
     } else {
       els.pumpPriceValue.innerHTML = priceHint
-        ? `<span class="edit-hint is-stale">${money(priceHint)}</span> <span class="unit">zł</span>`
+        ? `<span class="edit-hint is-stale">${money(priceHint)}</span> <span class="unit">zł/litr</span>`
         : '<span class="empty">--</span>';
       els.pumpPriceValue.classList.toggle("stale", !!priceHint);
       els.pumpPriceValue.classList.toggle("empty", !priceHint);
@@ -766,6 +766,15 @@
     draft.date = todayIso();
   }
 
+  function clearRefuelInputDraft() {
+    draft.odometer = null;
+    draft.pumpPrice = null;
+    draft.liters = "";
+    saveAll();
+    setActiveEdit("odometer");
+    toast("Pola tankowania wyczyszczone.");
+  }
+
   async function saveEntry() {
     try {
       draft.date = els.refuelDate.value || todayIso();
@@ -888,6 +897,18 @@
       return;
     }
     render();
+  }
+
+  function advanceEditField() {
+    if (activeEdit === "odometer") {
+      setActiveEdit("price", true);
+      return;
+    }
+    if (activeEdit === "price") {
+      setActiveEdit("liters", true);
+      return;
+    }
+    setActiveEdit("odometer", true);
   }
 
   function bindEvents() {
@@ -1044,7 +1065,9 @@
     keypad.init({
       root: els.inlineKeypad,
       onChange: applyKeypadValue,
-      onCommit: applyKeypadValue
+      onCommit: applyKeypadValue,
+      onOk: advanceEditField,
+      onClear: clearRefuelInputDraft
     });
     keypadReady = true;
     bindEvents();

@@ -4,9 +4,12 @@
   let active = null;
   let callbacks = {
     onChange: function () {},
-    onCommit: function () {}
+    onCommit: function () {},
+    onOk: function () {},
+    onClear: function () {}
   };
   let ui = {};
+  let suppressBackClickUntil = 0;
 
   function escapeHtml(value) {
     return String(value)
@@ -160,7 +163,7 @@
   function press(key) {
     if (!active) return;
     if (key === "ok") {
-      notify(true);
+      callbacks.onOk({ mode: active.mode });
       render();
       return;
     }
@@ -196,10 +199,16 @@
     };
     callbacks = {
       onChange: typeof options.onChange === "function" ? options.onChange : function () {},
-      onCommit: typeof options.onCommit === "function" ? options.onCommit : function () {}
+      onCommit: typeof options.onCommit === "function" ? options.onCommit : function () {},
+      onOk: typeof options.onOk === "function" ? options.onOk : function () {},
+      onClear: typeof options.onClear === "function" ? options.onClear : function () {}
     };
     if (ui.root) {
       ui.root.querySelectorAll("[data-key]").forEach(function (button) {
+        if (button.dataset.key === "back") {
+          bindBackButton(button);
+          return;
+        }
         button.addEventListener("click", function () {
           button.classList.add("pressed");
           window.setTimeout(function () {
@@ -209,6 +218,91 @@
         });
       });
     }
+  }
+
+  function bindBackButton(button) {
+    let timer = 0;
+    let longPressDone = false;
+    let pointerActive = false;
+
+    function stopPendingClass() {
+      button.classList.remove("clear-pending");
+    }
+
+    function clearTimer() {
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = 0;
+      }
+    }
+
+    function pulsePressed() {
+      button.classList.add("pressed");
+      window.setTimeout(function () {
+        button.classList.remove("pressed");
+      }, 120);
+    }
+
+    function finishPointer(event) {
+      if (!pointerActive) return;
+      pointerActive = false;
+      if (event && event.cancelable) event.preventDefault();
+      clearTimer();
+      stopPendingClass();
+      suppressBackClickUntil = Date.now() + 500;
+      if (!longPressDone) {
+        pulsePressed();
+        press("back");
+      }
+      longPressDone = false;
+    }
+
+    button.addEventListener("pointerdown", function (event) {
+      if (event && event.cancelable) event.preventDefault();
+      pointerActive = true;
+      longPressDone = false;
+      clearTimer();
+      button.classList.add("clear-pending");
+      if (button.setPointerCapture && event.pointerId !== undefined) {
+        try {
+          button.setPointerCapture(event.pointerId);
+        } catch (error) {}
+      }
+      timer = window.setTimeout(function () {
+        timer = 0;
+        longPressDone = true;
+        suppressBackClickUntil = Date.now() + 700;
+        stopPendingClass();
+        pulsePressed();
+        callbacks.onClear({ mode: active ? active.mode : "" });
+      }, 2000);
+    });
+
+    button.addEventListener("pointerup", finishPointer);
+    button.addEventListener("pointercancel", function (event) {
+      pointerActive = false;
+      clearTimer();
+      stopPendingClass();
+      longPressDone = false;
+      if (event && event.cancelable) event.preventDefault();
+    });
+    button.addEventListener("pointerleave", function () {
+      if (!pointerActive) return;
+      pointerActive = false;
+      clearTimer();
+      stopPendingClass();
+      longPressDone = false;
+      suppressBackClickUntil = Date.now() + 300;
+    });
+    button.addEventListener("click", function (event) {
+      if (Date.now() < suppressBackClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      pulsePressed();
+      press("back");
+    });
   }
 
   function getMode() {

@@ -182,7 +182,7 @@ footer,
 }
 
 .meter-row {
-  grid-template-columns: minmax(0, 1fr) 96px 72px;
+  grid-template-columns: minmax(0, 1fr) 72px 96px;
 }
 
 .price-grid {
@@ -322,8 +322,7 @@ input {
 }
 
 .field-main.stale,
-.edit-hint.is-stale,
-.cursor-digit.is-stale {
+.edit-hint.is-stale {
   color: var(--yellow);
   opacity: 0.45;
 }
@@ -340,9 +339,16 @@ input {
   display: inline-block;
   min-width: 0.55em;
   padding-bottom: 3px;
-  border-bottom: 4px solid var(--green);
-  color: var(--green-dark);
+  border-bottom: 4px solid var(--yellow);
+  color: var(--yellow);
+  text-shadow: 0 0 8px rgba(254, 243, 199, 0.35);
   animation: cursorBlink 1s steps(2, start) infinite;
+}
+
+.cursor-digit.is-stale {
+  color: var(--yellow);
+  opacity: 1;
+  border-bottom-color: var(--yellow);
 }
 
 .unit {
@@ -483,6 +489,12 @@ button:active,
   color: #001f16;
 }
 
+.inline-keypad-grid button.clear-pending {
+  animation: clearPendingShake 0.18s linear infinite;
+  border-color: var(--gold);
+  color: var(--yellow);
+}
+
 .primary {
   background: var(--green);
   border-color: var(--green);
@@ -510,6 +522,19 @@ button:active,
   }
 }
 
+@keyframes clearPendingShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
 .settings-panel[hidden] {
   display: none;
 }
@@ -529,7 +554,7 @@ button:active,
 
 .queue-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto 42px;
+  grid-template-columns: minmax(0, 1fr) auto 42px;
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
@@ -714,7 +739,7 @@ body.editing-discount footer {
   }
 
   .meter-row {
-    grid-template-columns: minmax(0, 1fr) 86px 64px;
+    grid-template-columns: minmax(0, 1fr) 64px 86px;
   }
 
   .result-band {

@@ -1,6 +1,6 @@
 # Tankowanie
 
-Version: v1.4.0
+Version: v1.4.1
 
 Mobile-first PWA for fast refueling entry. The Google Apps Script endpoint and PIN are configured locally in the app settings on the phone.
 
@@ -54,7 +54,7 @@ For E98, the monthly result in the app follows the latest E98 consumption becaus
 
 Pump/display price is kept only in the phone app as a next-entry hint. The Sheet receives only the discounted price.
 
-The app config response also returns recent completed refueling data separately for LPG and E98, including odometer, liters, date, distance, and consumption. The phone uses that history for `Dziś`, `Ostatnie`, and distance hints. Sheet values overwrite provisional local values after fetch/sync.
+The app config response also returns recent completed refueling data separately for LPG and E98, including odometer, liters, date, distance, and consumption. The phone uses that history for `Dziś`, `Poprzednie`, and distance hints. Sheet values overwrite provisional local values after fetch/sync.
 
 ## Sound Assets
 
