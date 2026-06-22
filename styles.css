@@ -595,6 +595,18 @@ button:active,
   font-size: 17px;
 }
 
+.queue-panel.queue-empty {
+  min-height: 6px;
+  padding: 0;
+  margin-bottom: 4px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.queue-panel.queue-empty .queue-list {
+  min-height: 0;
+}
+
 h2 {
   margin: 0;
   font-size: 13px;
@@ -631,6 +643,7 @@ h2 {
 .inline-keypad {
   background: rgba(7, 10, 14, 0.98);
   box-shadow: var(--shadow);
+  margin-bottom: 0;
 }
 
 .sync-working-panel {
@@ -751,9 +764,10 @@ body.editing-discount footer {
 }
 
 .flota-footer {
+  position: relative;
   height: 122px;
   min-height: 122px;
-  margin: 4px -10px -10px;
+  margin: 0 -10px 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -767,6 +781,54 @@ body.editing-discount footer {
   height: 100%;
   max-width: 100%;
   object-fit: contain;
+}
+
+.flota-status {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: 74px;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  z-index: 1;
+}
+
+.flota-status span {
+  min-height: 0;
+  padding: 0 4px;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.68);
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flota-actions {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  z-index: 1;
+}
+
+.flota-actions button {
+  width: 42px;
+  min-height: 34px;
+  padding: 3px;
+  font-size: 17px;
+  background: rgba(0, 0, 0, 0.7);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--ink);
 }
 
 @media (max-width: 390px) {

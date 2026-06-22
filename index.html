@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=1.5.5">
+  <link rel="stylesheet" href="styles.css?v=1.5.6">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -110,25 +110,27 @@
         </div>
       </section>
 
+      <footer class="flota-footer" aria-label="Orlen Flota">
+        <div class="sync-strip flota-status" aria-live="polite">
+          <span id="onlineState">offline</span>
+          <span id="syncState">brak sync</span>
+          <span id="queueState">q: 0</span>
+        </div>
+        <img src="grafiki/Orlen-flota.jpg" alt="Orlen Flota">
+        <div class="flota-actions">
+          <button id="syncButton" class="action-icon" type="button" aria-label="Synchronizuj" title="Synchronizuj">⇅</button>
+          <button id="refreshButton" class="action-icon" type="button" aria-label="Pobierz dane" title="Pobierz dane z arkusza">☁↓</button>
+          <button class="icon-button" id="settingsToggle" type="button" aria-label="Ustawienia synchronizacji">⚙</button>
+        </div>
+      </footer>
+
       <section class="sync-working-panel" id="syncWorkingPanel" aria-live="polite" hidden>
         <div class="sync-spinner" aria-hidden="true"></div>
         <div id="syncWorkingText">Praca online...</div>
       </section>
 
-      <section class="queue-panel">
-        <div class="queue-header">
-          <div class="sync-strip" aria-live="polite">
-            <span id="onlineState">offline</span>
-            <span id="syncState">brak sync</span>
-            <span id="queueState">kolejka: 0</span>
-          </div>
-          <div class="queue-actions">
-            <button id="syncButton" class="action-icon" type="button" aria-label="Synchronizuj" title="Synchronizuj">⇅</button>
-            <button id="refreshButton" class="action-icon" type="button" aria-label="Pobierz dane" title="Pobierz dane z arkusza">☁↓</button>
-          </div>
-          <button class="icon-button" id="settingsToggle" type="button" aria-label="Ustawienia synchronizacji">⚙</button>
-        </div>
-        <div id="queueList" class="queue-list">Brak wpisów w kolejce.</div>
+      <section class="queue-panel" id="queuePanel">
+        <div id="queueList" class="queue-list"></div>
       </section>
 
       <section class="settings-panel" id="settingsPanel" hidden>
@@ -141,7 +143,7 @@
             <span>PIN</span>
             <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
           </label>
-          <span class="settings-version" id="appVersionLabel">v1.5.5</span>
+          <span class="settings-version" id="appVersionLabel">v1.5.6</span>
         </div>
 
         <div class="actions compact">
@@ -149,18 +151,15 @@
           <button id="testSettingsButton" type="button">Test</button>
         </div>
       </section>
-      <footer class="flota-footer" aria-label="Orlen Flota">
-        <img src="grafiki/Orlen-flota.jpg" alt="Orlen Flota">
-      </footer>
     </main>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="storage.js?v=1.5.5"></script>
-  <script src="keypad.js?v=1.5.5"></script>
-  <script src="sync.js?v=1.5.5"></script>
-  <script src="sounds.js?v=1.5.5"></script>
-  <script src="app.js?v=1.5.5"></script>
+  <script src="storage.js?v=1.5.6"></script>
+  <script src="keypad.js?v=1.5.6"></script>
+  <script src="sync.js?v=1.5.6"></script>
+  <script src="sounds.js?v=1.5.6"></script>
+  <script src="app.js?v=1.5.6"></script>
 </body>
 </html>

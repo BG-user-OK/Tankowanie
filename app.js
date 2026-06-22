@@ -17,6 +17,7 @@
   let keypadReady = false;
   let busyAction = "";
   let userAdjustedDate = false;
+  const protectedClickAt = {};
 
   function $(id) {
     return document.getElementById(id);
@@ -216,6 +217,20 @@
   function playSound(group) {
     const sounds = window.TankowanieSounds;
     if (sounds && typeof sounds.play === "function") sounds.play(group);
+  }
+
+  function runProtectedEdit(key, action) {
+    const now = Date.now();
+    const previous = Number(protectedClickAt[key] || 0);
+    if (previous && now - previous <= 1000) {
+      protectedClickAt[key] = 0;
+      action();
+      return;
+    }
+    protectedClickAt[key] = now;
+    window.setTimeout(function () {
+      if (protectedClickAt[key] === now) protectedClickAt[key] = 0;
+    }, 1000);
   }
 
   function odometerHintValue() {
@@ -658,9 +673,11 @@
   function renderQueue() {
     if (els.syncButton) els.syncButton.hidden = !queue.length;
     if (!queue.length) {
-      els.queueList.textContent = "Brak wpisów w kolejce.";
+      if (els.queuePanel) els.queuePanel.classList.add("queue-empty");
+      els.queueList.textContent = "";
       return;
     }
+    if (els.queuePanel) els.queuePanel.classList.remove("queue-empty");
     els.queueList.innerHTML = queue.map(function (item) {
       return `
         <div class="queue-item">
@@ -964,12 +981,14 @@
 
     els.dateButton.addEventListener("click", function () {
       playSound("other");
-      if (typeof els.refuelDate.showPicker === "function") {
-        els.refuelDate.showPicker();
-      } else {
-        els.refuelDate.focus();
-        els.refuelDate.click();
-      }
+      runProtectedEdit("date", function () {
+        if (typeof els.refuelDate.showPicker === "function") {
+          els.refuelDate.showPicker();
+        } else {
+          els.refuelDate.focus();
+          els.refuelDate.click();
+        }
+      });
     });
 
     els.refuelDate.addEventListener("change", function () {
@@ -991,7 +1010,9 @@
 
     els.discountButton.addEventListener("click", function () {
       playSound("other");
-      setActiveEdit("discount", true);
+      runProtectedEdit("discount", function () {
+        setActiveEdit("discount", true);
+      });
     });
 
     els.litersButton.addEventListener("click", function () {
@@ -1080,7 +1101,8 @@
       "discountTotalValue", "paidTotalValue", "saveButton", "syncButton",
       "refreshButton", "settingsPanel", "endpointInput", "pinInput",
       "saveSettingsButton", "testSettingsButton", "queueList", "toast",
-      "inlineKeypad", "inlineKeypadGrid", "syncWorkingPanel", "syncWorkingText", "appVersionLabel"
+      "inlineKeypad", "inlineKeypadGrid", "syncWorkingPanel", "syncWorkingText",
+      "appVersionLabel", "queuePanel"
     ].forEach(function (id) {
       els[id] = $(id);
     });
