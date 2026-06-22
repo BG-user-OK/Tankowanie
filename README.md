@@ -1,6 +1,6 @@
 # Tankowanie
 
-Version: v1.5.2
+Version: v1.5.3
 
 Mobile-first PWA for fast refueling entry. The Google Apps Script endpoint and PIN are configured locally in the app settings on the phone.
 

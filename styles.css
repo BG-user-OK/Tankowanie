@@ -687,24 +687,12 @@ h2 {
   border-radius: 8px;
 }
 
-.inline-keypad-grid::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 calc((100% + 6px) / 4) 0;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: min(76%, 260px);
-  opacity: 0.16;
-  pointer-events: none;
-  z-index: 0;
+.inline-keypad-grid.fuel-lpg {
+  background: #ffffff;
 }
 
-.inline-keypad-grid.fuel-lpg::before {
-  background-image: url("grafiki/LPG.png");
-}
-
-.inline-keypad-grid.fuel-e98::before {
-  background-image: url("grafiki/E98.png");
+.inline-keypad-grid.fuel-e98 {
+  background: #009b4e;
 }
 
 .inline-keypad-grid button {
@@ -713,7 +701,7 @@ h2 {
   min-height: 75px;
   padding: 0;
   font-size: 28px;
-  background: rgba(17, 24, 39, 0.86);
+  background: #111827;
   transition: background-color 90ms ease, color 90ms ease, transform 80ms ease;
 }
 

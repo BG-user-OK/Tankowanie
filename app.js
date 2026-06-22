@@ -96,7 +96,8 @@
   }
 
   function fuelImagePath(fuel) {
-    return fuel === "E98" ? "grafiki/E98.png" : "grafiki/LPG.png";
+    const version = encodeURIComponent(storage.APP_VERSION);
+    return fuel === "E98" ? `grafiki/E98.png?v=${version}` : `grafiki/LPG.png?v=${version}`;
   }
 
   function emptyFuelHint() {
