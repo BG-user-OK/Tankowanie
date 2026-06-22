@@ -433,6 +433,9 @@
     if (message.includes("Receipt row does not match")) {
       return "Skan nie pasuje do wiersza LPG w arkuszu.";
     }
+    if (message.includes("Authorization") || message.includes("DriveApp") || message.includes("permission")) {
+      return "Apps Script wymaga autoryzacji Google Drive. Uruchom authorizeDrive i wdróż skrypt ponownie.";
+    }
     return message || "Błąd synchronizacji.";
   }
 
@@ -457,7 +460,7 @@
     [
       { action: "save", element: els.saveButton },
       { action: "sync", element: els.syncButton },
-      { action: "scan", element: els.refreshButton },
+      { action: "scan", element: els.saveButton },
       { action: "data", element: els.refreshButton }
     ].forEach(function (item) {
       if (!item.element) return;
@@ -608,10 +611,10 @@
     setValueState(els.priceButton, !!draft.pumpPrice);
 
     if (litersActive) {
-      els.litersValue.innerHTML = `${keypad.getDisplayHtml()} <span class="unit">l</span>`;
+      els.litersValue.innerHTML = keypad.getDisplayHtml();
       els.litersValue.classList.toggle("empty", !draft.liters);
     } else if (parseDecimal(draft.liters)) {
-      els.litersValue.innerHTML = `${formatLiters(draft.liters)} <span class="unit">l</span>`;
+      els.litersValue.textContent = formatLiters(draft.liters);
       els.litersValue.classList.remove("empty");
     } else {
       els.litersValue.innerHTML = '<span class="empty">--</span>';
@@ -625,12 +628,17 @@
 
   function renderResults() {
     const completed = completedResultsForFuel(draft.fuel);
-    const todayConsumption = completed.today ? parseDecimal(completed.today.consumption) : null;
+    const draftDate = normalizeDateIso(els.refuelDate && els.refuelDate.value ? els.refuelDate.value : draft.date);
+    const draftConsumption = draftDate === todayIso() ? localConsumption() : null;
+    const todayConsumption = draftConsumption !== null
+      ? draftConsumption
+      : completed.today ? parseDecimal(completed.today.consumption) : null;
     const lastConsumption = completed.last ? parseDecimal(completed.last.consumption) : null;
     const latestConsumption = completed.latest ? parseDecimal(completed.latest.consumption) : null;
     const sheetMonthly = parseDecimal(results.monthlyAverage);
 
     els.todayResultValue.textContent = todayConsumption !== null ? formatConsumption(todayConsumption) : "--";
+    els.todayResultValue.classList.toggle("provisional-result", draftConsumption !== null);
     els.lastResultValue.textContent = lastConsumption !== null ? formatConsumption(lastConsumption) : "--";
     els.lastSheetRead.textContent = (completed.today && completed.today.date) || (completed.last && completed.last.date) || results.lastReadAt || "";
 
@@ -710,21 +718,25 @@
   }
 
   function renderReceiptScanState() {
-    if (!els.refreshButton) return;
+    if (!els.refreshButton || !els.saveButton) return;
     const record = activeReceiptScan();
     const active = !!record;
-    els.refreshButton.classList.toggle("scan-pending", active);
-    if (active) {
-      els.refreshButton.textContent = "☁↑";
-      els.refreshButton.title = record.status === "ready"
-        ? "Wyślij skan paragonu"
-        : "Dodaj skan paragonu";
-      els.refreshButton.setAttribute("aria-label", els.refreshButton.title);
-      return;
-    }
+    els.refreshButton.classList.remove("scan-pending", "scan-abandon-pending");
     els.refreshButton.textContent = "☁↓";
     els.refreshButton.title = "Pobierz dane z arkusza";
     els.refreshButton.setAttribute("aria-label", "Pobierz dane");
+    els.saveButton.classList.toggle("scan-pending", active);
+    if (active) {
+      els.saveButton.title = !isRefuelDraftEmpty()
+        ? "Wyślij wpis; skan czeka"
+        : record.status === "ready"
+        ? "Wyślij skan paragonu"
+        : "Dodaj skan paragonu";
+      els.saveButton.setAttribute("aria-label", els.saveButton.title);
+      return;
+    }
+    els.saveButton.title = "Wyślij do arkusza";
+    els.saveButton.setAttribute("aria-label", "Zapisz lub wyślij");
   }
 
   function applyConfig(config) {
@@ -791,7 +803,7 @@
     const liters = parseDecimal(draft.liters);
     const price = Number(visiblePumpPrice());
     const odometer = Number(draft.odometer);
-    const date = els.refuelDate.value || todayIso();
+    const date = normalizeDateIso(els.refuelDate.value || draft.date) || todayIso();
     const paid = paidPrice();
     const discount = effectiveDiscount();
 
@@ -1232,21 +1244,21 @@
     receiptActionPointerActive = true;
     receiptActionLongDone = false;
     clearTimeout(receiptActionTimer);
-    if (els.refreshButton) els.refreshButton.classList.add("scan-abandon-pending");
+    if (els.saveButton) els.saveButton.classList.add("scan-abandon-pending");
     receiptActionTimer = window.setTimeout(function () {
       if (!receiptActionPointerActive) return;
       receiptActionLongDone = true;
       suppressReceiptActionClickUntil = Date.now() + 900;
       if (event && typeof event.preventDefault === "function") event.preventDefault();
       abandonActiveReceiptScan();
-      if (els.refreshButton) els.refreshButton.classList.remove("scan-abandon-pending");
+      if (els.saveButton) els.saveButton.classList.remove("scan-abandon-pending");
     }, 2000);
   }
 
   function stopReceiptCloudLongPress() {
     receiptActionPointerActive = false;
     clearTimeout(receiptActionTimer);
-    if (els.refreshButton) els.refreshButton.classList.remove("scan-abandon-pending");
+    if (els.saveButton) els.saveButton.classList.remove("scan-abandon-pending");
     if (receiptActionLongDone) suppressReceiptActionClickUntil = Date.now() + 900;
   }
 
@@ -1452,22 +1464,28 @@
     });
 
     els.saveButton.addEventListener("click", function () {
+      if (Date.now() < suppressReceiptActionClickUntil) return;
       playSound("other");
+      if (activeReceiptScan() && isRefuelDraftEmpty()) {
+        handleReceiptCloudAction();
+        return;
+      }
       saveEntry();
     });
+    els.saveButton.addEventListener("pointerdown", startReceiptCloudLongPress);
+    els.saveButton.addEventListener("pointerup", stopReceiptCloudLongPress);
+    els.saveButton.addEventListener("pointercancel", stopReceiptCloudLongPress);
+    els.saveButton.addEventListener("pointerleave", stopReceiptCloudLongPress);
     els.syncButton.addEventListener("click", function () {
       playSound("other");
       syncQueue();
     });
     els.refreshButton.addEventListener("click", function () {
-      if (Date.now() < suppressReceiptActionClickUntil) return;
       playSound("other");
-      handleReceiptCloudAction();
+      refreshConfig().catch(function (error) {
+        toast(friendlySyncError(error) || "Nie udało się pobrać danych.");
+      });
     });
-    els.refreshButton.addEventListener("pointerdown", startReceiptCloudLongPress);
-    els.refreshButton.addEventListener("pointerup", stopReceiptCloudLongPress);
-    els.refreshButton.addEventListener("pointercancel", stopReceiptCloudLongPress);
-    els.refreshButton.addEventListener("pointerleave", stopReceiptCloudLongPress);
 
     els.receiptYesButton.addEventListener("click", function () {
       playSound("other");

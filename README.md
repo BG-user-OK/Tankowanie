@@ -1,6 +1,6 @@
 # Tankowanie
 
-Version: v2.0.0
+Version: v2.0.1
 
 Mobile-first PWA for fast refueling entry. The Google Apps Script endpoint and PIN are configured locally in the app settings on the phone.
 
@@ -44,6 +44,8 @@ H{row} = liters
 I{row} = discounted price actually paid
 T{row} = refueling date
 ```
+
+Refueling dates are sent as `YYYY-MM-DD` and written as real Google Sheets dates formatted as `yyyy-mm-dd`, without a time component.
 
 Displayed monthly LPG result:
 

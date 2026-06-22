@@ -143,6 +143,10 @@ footer,
   color: var(--ink);
 }
 
+.result-value strong.provisional-result {
+  color: var(--yellow);
+}
+
 .result-unit {
   color: var(--muted);
   font-size: 12px;
