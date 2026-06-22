@@ -36,6 +36,22 @@ input {
   font: inherit;
 }
 
+button,
+.field-button,
+.inline-keypad-grid,
+.inline-keypad-grid button {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button,
+.field-button,
+.inline-keypad-grid button {
+  touch-action: manipulation;
+}
+
 .app-shell {
   width: min(100%, 520px);
   min-height: 100vh;
@@ -707,6 +723,7 @@ h2 {
 
 .inline-keypad-grid .utility {
   color: var(--red);
+  touch-action: none;
 }
 
 .inline-keypad-grid .ok {

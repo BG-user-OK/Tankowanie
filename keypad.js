@@ -225,6 +225,12 @@
     let longPressDone = false;
     let pointerActive = false;
 
+    function stopNativeHold(event) {
+      if (!event) return;
+      if (event.cancelable) event.preventDefault();
+      if (event.stopPropagation) event.stopPropagation();
+    }
+
     function stopPendingClass() {
       button.classList.remove("clear-pending");
     }
@@ -246,7 +252,7 @@
     function finishPointer(event) {
       if (!pointerActive) return;
       pointerActive = false;
-      if (event && event.cancelable) event.preventDefault();
+      stopNativeHold(event);
       clearTimer();
       stopPendingClass();
       suppressBackClickUntil = Date.now() + 500;
@@ -257,8 +263,13 @@
       longPressDone = false;
     }
 
+    button.setAttribute("draggable", "false");
+    button.addEventListener("contextmenu", stopNativeHold);
+    button.addEventListener("selectstart", stopNativeHold);
+    button.addEventListener("dragstart", stopNativeHold);
+
     button.addEventListener("pointerdown", function (event) {
-      if (event && event.cancelable) event.preventDefault();
+      stopNativeHold(event);
       pointerActive = true;
       longPressDone = false;
       clearTimer();
@@ -284,7 +295,7 @@
       clearTimer();
       stopPendingClass();
       longPressDone = false;
-      if (event && event.cancelable) event.preventDefault();
+      stopNativeHold(event);
     });
     button.addEventListener("pointerleave", function () {
       if (!pointerActive) return;
