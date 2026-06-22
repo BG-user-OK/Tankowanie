@@ -535,6 +535,17 @@ button:active,
   animation: actionBusyBlink 0.55s ease-in-out infinite alternate;
 }
 
+.action-icon.scan-pending {
+  background: #facc15;
+  border-color: #fbbf24;
+  color: #111827;
+  animation: scanPendingBlink 0.85s ease-in-out infinite alternate;
+}
+
+.action-icon.scan-abandon-pending {
+  animation: scanPendingBlink 0.85s ease-in-out infinite alternate, clearPendingShake 0.16s linear infinite;
+}
+
 @keyframes actionBusyBlink {
   from {
     filter: brightness(0.7);
@@ -542,6 +553,17 @@ button:active,
   to {
     filter: brightness(1.45);
     box-shadow: 0 0 16px rgba(52, 211, 153, 0.55);
+  }
+}
+
+@keyframes scanPendingBlink {
+  from {
+    filter: brightness(0.7);
+    box-shadow: 0 0 0 rgba(250, 204, 21, 0);
+  }
+  to {
+    filter: brightness(1.35);
+    box-shadow: 0 0 18px rgba(250, 204, 21, 0.72);
   }
 }
 
@@ -638,6 +660,55 @@ h2 {
   box-shadow: var(--shadow);
   font-weight: 800;
   z-index: 30;
+}
+
+.receipt-dialog {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: end center;
+  padding: 18px 12px calc(18px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.62);
+  z-index: 40;
+}
+
+.receipt-card {
+  width: min(94vw, 460px);
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(250, 204, 21, 0.48);
+  border-radius: 8px;
+  background: #0d1117;
+  color: var(--ink);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+.receipt-card strong {
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.receipt-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+#receiptSourceActions {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.receipt-actions button {
+  min-height: 54px;
+  padding: 8px;
+  font-size: 14px;
+}
+
+.receipt-actions button:first-child {
+  background: var(--green);
+  border-color: var(--green);
+  color: #001f16;
 }
 
 .inline-keypad {

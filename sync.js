@@ -110,33 +110,43 @@
     throw new Error("No write receipt from Apps Script.");
   }
 
-  async function submitEntry(settings, entry) {
+  async function postAction(settings, action, payloadKey, payload) {
     const requestId = window.TankowanieStorage.createId("request");
+    const body = {
+      action,
+      appVersion: appVersion(),
+      apiVersion: apiVersion(),
+      pin: settings.pin,
+      requestId
+    };
+    body[payloadKey] = payload;
     await fetch(normalizeUrl(settings.endpointUrl), {
       method: "POST",
       mode: "no-cors",
       keepalive: false,
       headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({
-        action: "submitRefuel",
-        appVersion: appVersion(),
-        apiVersion: apiVersion(),
-        pin: settings.pin,
-        requestId,
-        entry
-      })
+      body: JSON.stringify(body)
     });
     const receipt = await waitForReceipt(settings, requestId);
     if (!receipt || receipt.ok !== true) {
-      throw new Error(receipt && receipt.error ? receipt.error : "Submit failed.");
+      throw new Error(receipt && receipt.error ? receipt.error : `${action} failed.`);
     }
     return receipt;
+  }
+
+  async function submitEntry(settings, entry) {
+    return postAction(settings, "submitRefuel", "entry", entry);
+  }
+
+  async function uploadReceiptScan(settings, receiptScan) {
+    return postAction(settings, "uploadReceiptScan", "receipt", receiptScan);
   }
 
   window.TankowanieSync = {
     getConfig,
     ping,
     debugProps,
-    submitEntry
+    submitEntry,
+    uploadReceiptScan
   };
 })();

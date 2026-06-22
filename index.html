@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=1.5.6">
+  <link rel="stylesheet" href="styles.css?v=2.0.0">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -40,7 +40,7 @@
         </div>
 
         <button id="fuelToggle" class="fuel-switch fuel-toggle" type="button" aria-label="Wybór paliwa: LPG">
-          <img id="fuelToggleImage" src="grafiki/LPG.png?v=1.5.5" alt="LPG">
+          <img id="fuelToggleImage" src="grafiki/LPG.png?v=2.0.0" alt="LPG">
         </button>
       </section>
 
@@ -143,7 +143,7 @@
             <span>PIN</span>
             <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
           </label>
-          <span class="settings-version" id="appVersionLabel">v1.5.6</span>
+          <span class="settings-version" id="appVersionLabel">v2.0.0</span>
         </div>
 
         <div class="actions compact">
@@ -156,10 +156,28 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="storage.js?v=1.5.6"></script>
-  <script src="keypad.js?v=1.5.6"></script>
-  <script src="sync.js?v=1.5.6"></script>
-  <script src="sounds.js?v=1.5.6"></script>
-  <script src="app.js?v=1.5.6"></script>
+  <section id="receiptDialog" class="receipt-dialog" aria-live="polite" hidden>
+    <div class="receipt-card">
+      <strong id="receiptQuestionText">Czy wysłać skan paragonu?</strong>
+      <div id="receiptDecisionActions" class="receipt-actions">
+        <button id="receiptYesButton" type="button">TAK</button>
+        <button id="receiptLaterButton" type="button">MOŻE PÓŹNIEJ</button>
+      </div>
+      <div id="receiptSourceActions" class="receipt-actions" hidden>
+        <button id="receiptCameraButton" type="button">APARAT</button>
+        <button id="receiptGalleryButton" type="button">GALERIA</button>
+        <button id="receiptCancelButton" type="button">ANULUJ</button>
+      </div>
+    </div>
+  </section>
+
+  <input id="receiptCameraInput" class="visually-hidden" type="file" accept="image/*" capture="environment">
+  <input id="receiptGalleryInput" class="visually-hidden" type="file" accept="image/*">
+
+  <script src="storage.js?v=2.0.0"></script>
+  <script src="keypad.js?v=2.0.0"></script>
+  <script src="sync.js?v=2.0.0"></script>
+  <script src="sounds.js?v=2.0.0"></script>
+  <script src="app.js?v=2.0.0"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # Tankowanie
 
-Version: v1.5.6
+Version: v2.0.0
 
 Mobile-first PWA for fast refueling entry. The Google Apps Script endpoint and PIN are configured locally in the app settings on the phone.
 
@@ -32,6 +32,7 @@ AL{row} = odometer
 AM{row} = liters
 AN{row} = discounted price actually paid
 AY{row} = refueling date
+AT{row} = receipt scan Drive link
 ```
 
 E98 entry:
@@ -55,6 +56,31 @@ For E98, the monthly result in the app follows the latest E98 consumption becaus
 Pump/display price is kept only in the phone app as a next-entry hint. The Sheet receives only the discounted price.
 
 The app config response also returns recent completed refueling data separately for LPG and E98, including odometer, liters, date, distance, and consumption. The phone uses that history for `Dziś`, `Poprzednie`, and distance hints. Sheet values overwrite provisional local values after fetch/sync.
+
+## Receipt Scans
+
+After an LPG save the app asks whether to add a receipt scan. Choose `MOŻE PÓŹNIEJ` when gasoline will be added to the same printed receipt, then use the yellow cloud button after taking the E98 entry.
+
+Scans are stored locally until both conditions are true:
+
+```text
+photo exists
+LPG row exists in the Sheet
+```
+
+The Apps Script backend uploads scans to Google Drive folder:
+
+```text
+Potwierdzenia_skany
+```
+
+and writes the shared file link to:
+
+```text
+'zbiór danych LPG'!AT{row}
+```
+
+Receipt scan handling is backend-only. Drive folder IDs and authorization data are not published in the public Git repository.
 
 ## Sound Assets
 

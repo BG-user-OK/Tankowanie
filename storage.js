@@ -1,13 +1,14 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v1.5.6";
-  const API_VERSION = "TANKOWANIE_API_V1";
+  const APP_VERSION = "v2.0.0";
+  const API_VERSION = "TANKOWANIE_API_V2";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
     settings: `${PREFIX}_settings`,
     draft: `${PREFIX}_draft`,
     queue: `${PREFIX}_queue`,
+    receiptScans: `${PREFIX}_receipt_scans`,
     hints: `${PREFIX}_hints`,
     results: `${PREFIX}_results`,
     deviceId: `${PREFIX}_device_id`
@@ -79,6 +80,15 @@
     saveJSON(KEYS.queue, Array.isArray(queue) ? queue : []);
   }
 
+  function getReceiptScans() {
+    const scans = loadJSON(KEYS.receiptScans, []);
+    return Array.isArray(scans) ? scans : [];
+  }
+
+  function saveReceiptScans(scans) {
+    saveJSON(KEYS.receiptScans, Array.isArray(scans) ? scans : []);
+  }
+
   function getHints() {
     return Object.assign({
       discountPerLiter: 0.21,
@@ -120,6 +130,8 @@
     saveDraft,
     getQueue,
     saveQueue,
+    getReceiptScans,
+    saveReceiptScans,
     getHints,
     saveHints,
     getResults,

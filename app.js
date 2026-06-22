@@ -11,6 +11,7 @@
   let settings = storage.getSettings();
   let draft = storage.getDraft();
   let queue = storage.getQueue();
+  let receiptScans = storage.getReceiptScans();
   let hints = normalizeHints(storage.getHints());
   let results = storage.getResults();
   let activeEdit = "odometer";
@@ -18,6 +19,13 @@
   let busyAction = "";
   let userAdjustedDate = false;
   const protectedClickAt = {};
+  const RECEIPT_TARGET_BYTES = 520 * 1024;
+  const RECEIPT_MAX_EDGE = 1600;
+  let receiptPromptEntryId = "";
+  let receiptActionTimer = 0;
+  let receiptActionPointerActive = false;
+  let receiptActionLongDone = false;
+  let suppressReceiptActionClickUntil = 0;
 
   function $(id) {
     return document.getElementById(id);
@@ -365,6 +373,7 @@
     storage.saveSettings(settings);
     storage.saveDraft(draft);
     storage.saveQueue(queue);
+    storage.saveReceiptScans(receiptScans);
     storage.saveHints(hints);
     storage.saveResults(results);
   }
@@ -415,6 +424,15 @@
     if (message.includes("Network error")) {
       return "Brak połączenia z endpointem Apps Script.";
     }
+    if (message.includes("Missing LPG row for receipt scan")) {
+      return "Skan czeka lokalnie: brakuje wiersza LPG z arkusza.";
+    }
+    if (message.includes("Receipt scan is too large")) {
+      return "Skan jest za duży. Zrób zdjęcie z bliższa albo słabszą jakością.";
+    }
+    if (message.includes("Receipt row does not match")) {
+      return "Skan nie pasuje do wiersza LPG w arkuszu.";
+    }
     return message || "Błąd synchronizacji.";
   }
 
@@ -425,6 +443,7 @@
   function busyText(action) {
     if (action === "save") return "Wysyłanie do arkusza...";
     if (action === "sync") return "Synchronizacja...";
+    if (action === "scan") return "Wysyłanie skanu...";
     if (action === "data") return "Pobieranie danych...";
     return "Praca online...";
   }
@@ -438,6 +457,7 @@
     [
       { action: "save", element: els.saveButton },
       { action: "sync", element: els.syncButton },
+      { action: "scan", element: els.refreshButton },
       { action: "data", element: els.refreshButton }
     ].forEach(function (item) {
       if (!item.element) return;
@@ -666,6 +686,7 @@
     els.syncState.textContent = results.lastSyncAt ? `sync ${results.lastSyncAt}` : "brak sync";
     els.queueState.textContent = `q: ${queue.length}`;
     renderQueue();
+    renderReceiptScanState();
     updateOnlineState();
     renderBusy();
   }
@@ -686,6 +707,24 @@
         </div>
       `;
     }).join("");
+  }
+
+  function renderReceiptScanState() {
+    if (!els.refreshButton) return;
+    const record = activeReceiptScan();
+    const active = !!record;
+    els.refreshButton.classList.toggle("scan-pending", active);
+    if (active) {
+      els.refreshButton.textContent = "☁↑";
+      els.refreshButton.title = record.status === "ready"
+        ? "Wyślij skan paragonu"
+        : "Dodaj skan paragonu";
+      els.refreshButton.setAttribute("aria-label", els.refreshButton.title);
+      return;
+    }
+    els.refreshButton.textContent = "☁↓";
+    els.refreshButton.title = "Pobierz dane z arkusza";
+    els.refreshButton.setAttribute("aria-label", "Pobierz dane");
   }
 
   function applyConfig(config) {
@@ -828,6 +867,389 @@
     toast("Pola tankowania wyczyszczone.");
   }
 
+  function normalizeReceiptRecord(record) {
+    const source = record && typeof record === "object" ? record : {};
+    return {
+      entryId: String(source.entryId || ""),
+      fuel: String(source.fuel || "LPG").toUpperCase(),
+      row: source.row ? Number(source.row) : "",
+      refuelDate: normalizeDateIso(source.refuelDate || source.date) || "",
+      odometer: source.odometer ? Number(source.odometer) : "",
+      status: String(source.status || "pending"),
+      fileName: String(source.fileName || ""),
+      mimeType: String(source.mimeType || ""),
+      fileSize: source.fileSize ? Number(source.fileSize) : "",
+      base64: String(source.base64 || ""),
+      fileUrl: String(source.fileUrl || ""),
+      error: String(source.error || ""),
+      createdAt: String(source.createdAt || new Date().toISOString()),
+      updatedAt: String(source.updatedAt || new Date().toISOString())
+    };
+  }
+
+  function compactReceiptScans(scans) {
+    const active = [];
+    const inactive = [];
+    (Array.isArray(scans) ? scans : []).forEach(function (item) {
+      const record = normalizeReceiptRecord(item);
+      if (!record.entryId || record.fuel !== "LPG") return;
+      if (record.status === "pending" || record.status === "ready") active.push(record);
+      else inactive.push(record);
+    });
+    return active.concat(inactive.slice(-16));
+  }
+
+  function findReceiptScan(entryId) {
+    const id = String(entryId || "");
+    if (!id) return null;
+    for (let index = 0; index < receiptScans.length; index += 1) {
+      if (receiptScans[index] && receiptScans[index].entryId === id) return receiptScans[index];
+    }
+    return null;
+  }
+
+  function upsertReceiptScan(record) {
+    const normalized = normalizeReceiptRecord(record);
+    if (!normalized.entryId || normalized.fuel !== "LPG") return null;
+    const index = receiptScans.findIndex(function (item) {
+      return item && item.entryId === normalized.entryId;
+    });
+    if (index >= 0) receiptScans[index] = Object.assign({}, receiptScans[index], normalized);
+    else receiptScans.push(normalized);
+    receiptScans = compactReceiptScans(receiptScans);
+    return findReceiptScan(normalized.entryId);
+  }
+
+  function activeReceiptScan() {
+    for (let index = receiptScans.length - 1; index >= 0; index -= 1) {
+      const record = normalizeReceiptRecord(receiptScans[index]);
+      if (record.status === "ready" || record.status === "pending") return receiptScans[index];
+    }
+    return null;
+  }
+
+  function registerReceiptCandidate(entry, receipt, prompt) {
+    if (!entry || entry.fuel !== "LPG") return null;
+    const existing = findReceiptScan(entry.entryId) || {};
+    const record = upsertReceiptScan(Object.assign(existing, {
+      entryId: entry.entryId,
+      fuel: "LPG",
+      row: receipt && receipt.row ? Number(receipt.row) : existing.row || "",
+      refuelDate: entry.refuelDate,
+      odometer: entry.odometer,
+      status: existing.status || "pending",
+      updatedAt: new Date().toISOString()
+    }));
+    saveAll();
+    render();
+    if (prompt && record && (record.status === "pending" || record.status === "ready")) {
+      showReceiptDecision(record.entryId);
+    }
+    return record;
+  }
+
+  function updateReceiptRowFromReceipt(receipt) {
+    if (!receipt || receipt.fuel !== "LPG" || !receipt.entryId) return null;
+    const record = findReceiptScan(receipt.entryId);
+    if (!record) return null;
+    record.row = receipt.row ? Number(receipt.row) : record.row || "";
+    record.updatedAt = new Date().toISOString();
+    upsertReceiptScan(record);
+    saveAll();
+    render();
+    return findReceiptScan(receipt.entryId);
+  }
+
+  function showReceiptDecision(entryId) {
+    const record = findReceiptScan(entryId);
+    if (!record || !els.receiptDialog) return;
+    receiptPromptEntryId = record.entryId;
+    if (els.receiptQuestionText) {
+      els.receiptQuestionText.textContent = "Czy wysłać skan paragonu?";
+    }
+    if (els.receiptDecisionActions) els.receiptDecisionActions.hidden = false;
+    if (els.receiptSourceActions) els.receiptSourceActions.hidden = true;
+    els.receiptDialog.hidden = false;
+  }
+
+  function showReceiptSource(entryId) {
+    const record = findReceiptScan(entryId);
+    if (!record || !els.receiptDialog) return;
+    receiptPromptEntryId = record.entryId;
+    if (els.receiptQuestionText) {
+      els.receiptQuestionText.textContent = "Wybierz zdjęcie paragonu";
+    }
+    if (els.receiptDecisionActions) els.receiptDecisionActions.hidden = true;
+    if (els.receiptSourceActions) els.receiptSourceActions.hidden = false;
+    els.receiptDialog.hidden = false;
+  }
+
+  function hideReceiptDialog() {
+    receiptPromptEntryId = "";
+    if (els.receiptDialog) els.receiptDialog.hidden = true;
+  }
+
+  function chooseReceiptLater() {
+    const record = findReceiptScan(receiptPromptEntryId);
+    if (record) {
+      record.status = record.base64 ? "ready" : "pending";
+      record.updatedAt = new Date().toISOString();
+      upsertReceiptScan(record);
+      saveAll();
+      render();
+    }
+    hideReceiptDialog();
+    toast("Skan można dodać później chmurą.");
+  }
+
+  function clearReceiptFileInputs() {
+    if (els.receiptCameraInput) els.receiptCameraInput.value = "";
+    if (els.receiptGalleryInput) els.receiptGalleryInput.value = "";
+  }
+
+  function startReceiptFileChoice(source) {
+    const record = findReceiptScan(receiptPromptEntryId) || activeReceiptScan();
+    if (!record) return;
+    receiptPromptEntryId = record.entryId;
+    clearReceiptFileInputs();
+    if (source === "camera" && els.receiptCameraInput) {
+      els.receiptCameraInput.click();
+      return;
+    }
+    if (els.receiptGalleryInput) els.receiptGalleryInput.click();
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || "")); };
+      reader.onerror = function () { reject(new Error("Nie udało się odczytać zdjęcia.")); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise(function (resolve, reject) {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = function () {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error("Nie udało się wczytać zdjęcia."));
+      };
+      image.src = url;
+    });
+  }
+
+  function canvasToBlob(canvas, quality) {
+    return new Promise(function (resolve, reject) {
+      canvas.toBlob(function (blob) {
+        if (blob) resolve(blob);
+        else reject(new Error("Nie udało się przygotować skanu."));
+      }, "image/jpeg", quality);
+    });
+  }
+
+  async function compressReceiptImage(file) {
+    if (!file || !file.type || !file.type.startsWith("image/")) {
+      throw new Error("Wybierz plik obrazu.");
+    }
+    const image = await loadImageFromFile(file);
+    let maxEdge = RECEIPT_MAX_EDGE;
+    let bestBlob = null;
+    for (let pass = 0; pass < 3; pass += 1) {
+      const ratio = Math.min(1, maxEdge / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * ratio));
+      const height = Math.max(1, Math.round(image.height * ratio));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+      for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+        const blob = await canvasToBlob(canvas, quality);
+        bestBlob = blob;
+        if (blob.size <= RECEIPT_TARGET_BYTES) {
+          const dataUrl = await blobToDataUrl(blob);
+          return {
+            base64: dataUrl.split(",")[1] || "",
+            mimeType: "image/jpeg",
+            fileName: "",
+            fileSize: blob.size
+          };
+        }
+      }
+      maxEdge = Math.round(maxEdge * 0.78);
+    }
+    if (!bestBlob) throw new Error("Nie udało się przygotować skanu.");
+    if (bestBlob.size > 850 * 1024) throw new Error("Receipt scan is too large.");
+    const fallbackDataUrl = await blobToDataUrl(bestBlob);
+    return {
+      base64: fallbackDataUrl.split(",")[1] || "",
+      mimeType: "image/jpeg",
+      fileName: "",
+      fileSize: bestBlob.size
+    };
+  }
+
+  function receiptFileName(record) {
+    const date = normalizeDateIso(record.refuelDate) || todayIso();
+    const time = new Date().toTimeString().slice(0, 8).replace(/:/g, "-");
+    return `BG_ORLEN_${date}_${time}.jpg`;
+  }
+
+  async function handleReceiptFileSelected(file) {
+    const record = findReceiptScan(receiptPromptEntryId) || activeReceiptScan();
+    if (!record || !file) return;
+    try {
+      setBusy("scan");
+      const imageData = await compressReceiptImage(file);
+      record.status = "ready";
+      record.base64 = imageData.base64;
+      record.mimeType = imageData.mimeType;
+      record.fileName = receiptFileName(record);
+      record.fileSize = imageData.fileSize;
+      record.error = "";
+      record.updatedAt = new Date().toISOString();
+      upsertReceiptScan(record);
+      saveAll();
+      hideReceiptDialog();
+      render();
+      if (record.row) {
+        await uploadReceiptScanRecord(record);
+      } else {
+        toast("Skan zapisany lokalnie. Wyślij kolejkę po zatankowaniu.");
+      }
+    } catch (error) {
+      toast(friendlySyncError(error) || "Nie udało się zapisać skanu.");
+    } finally {
+      clearReceiptFileInputs();
+      setBusy("");
+    }
+  }
+
+  async function uploadReceiptScanRecord(record) {
+    const currentRecord = findReceiptScan(record && record.entryId);
+    if (!currentRecord || currentRecord.status !== "ready") return null;
+    const syncSettings = currentSettings({ persist: true });
+    const missing = missingSettingsMessage(syncSettings);
+    if (missing) {
+      toast(`Skan czeka lokalnie. ${missing}`);
+      return null;
+    }
+    if (!navigator.onLine) {
+      toast("Skan czeka lokalnie offline.");
+      return null;
+    }
+    if (!currentRecord.row) {
+      toast("Skan czeka lokalnie: najpierw wyślij wpis LPG.");
+      return null;
+    }
+    if (!currentRecord.base64) {
+      showReceiptSource(currentRecord.entryId);
+      return null;
+    }
+    const previousBusy = busyAction;
+    setBusy(previousBusy || "scan");
+    try {
+      const receipt = await sync.uploadReceiptScan(syncSettings, {
+        entryId: currentRecord.entryId,
+        fuel: "LPG",
+        row: currentRecord.row,
+        refuelDate: currentRecord.refuelDate,
+        odometer: currentRecord.odometer,
+        fileName: currentRecord.fileName || receiptFileName(currentRecord),
+        mimeType: currentRecord.mimeType || "image/jpeg",
+        base64: currentRecord.base64
+      });
+      currentRecord.status = "uploaded";
+      currentRecord.fileUrl = receipt.fileUrl || currentRecord.fileUrl || "";
+      currentRecord.base64 = "";
+      currentRecord.error = "";
+      currentRecord.updatedAt = new Date().toISOString();
+      upsertReceiptScan(currentRecord);
+      saveAll();
+      render();
+      toast("Skan paragonu wysłany.");
+      return receipt;
+    } catch (error) {
+      currentRecord.error = friendlySyncError(error);
+      currentRecord.updatedAt = new Date().toISOString();
+      upsertReceiptScan(currentRecord);
+      saveAll();
+      render();
+      toast(currentRecord.error || "Skan czeka lokalnie.");
+      return null;
+    } finally {
+      setBusy(previousBusy);
+    }
+  }
+
+  async function tryUploadReceiptScansForReceipt(receipt, syncSettings) {
+    const record = updateReceiptRowFromReceipt(receipt);
+    if (!record || record.status !== "ready" || !record.base64 || !record.row) return null;
+    const activeSettings = syncSettings || currentSettings({ persist: true });
+    const missing = missingSettingsMessage(activeSettings);
+    if (missing || !navigator.onLine) return null;
+    return uploadReceiptScanRecord(record);
+  }
+
+  function handleReceiptCloudAction() {
+    const record = activeReceiptScan();
+    if (!record) {
+      refreshConfig().catch(function (error) {
+        toast(friendlySyncError(error) || "Nie udało się pobrać danych.");
+      });
+      return;
+    }
+    if (record.status === "ready") {
+      uploadReceiptScanRecord(record);
+      return;
+    }
+    showReceiptSource(record.entryId);
+  }
+
+  function abandonActiveReceiptScan() {
+    const record = activeReceiptScan();
+    if (!record) return;
+    record.status = "abandoned";
+    record.base64 = "";
+    record.error = "";
+    record.updatedAt = new Date().toISOString();
+    upsertReceiptScan(record);
+    saveAll();
+    render();
+    toast("Skan paragonu pominięty.");
+  }
+
+  function startReceiptCloudLongPress(event) {
+    if (!activeReceiptScan() || busyAction) return;
+    receiptActionPointerActive = true;
+    receiptActionLongDone = false;
+    clearTimeout(receiptActionTimer);
+    if (els.refreshButton) els.refreshButton.classList.add("scan-abandon-pending");
+    receiptActionTimer = window.setTimeout(function () {
+      if (!receiptActionPointerActive) return;
+      receiptActionLongDone = true;
+      suppressReceiptActionClickUntil = Date.now() + 900;
+      if (event && typeof event.preventDefault === "function") event.preventDefault();
+      abandonActiveReceiptScan();
+      if (els.refreshButton) els.refreshButton.classList.remove("scan-abandon-pending");
+    }, 2000);
+  }
+
+  function stopReceiptCloudLongPress() {
+    receiptActionPointerActive = false;
+    clearTimeout(receiptActionTimer);
+    if (els.refreshButton) els.refreshButton.classList.remove("scan-abandon-pending");
+    if (receiptActionLongDone) suppressReceiptActionClickUntil = Date.now() + 900;
+  }
+
   async function saveEntry() {
     try {
       draft.date = els.refuelDate.value || todayIso();
@@ -837,30 +1259,38 @@
       const missing = missingSettingsMessage(syncSettings);
       if (missing || !navigator.onLine) {
         queue.push(entry);
+        if (entry.fuel === "LPG") registerReceiptCandidate(entry, null, false);
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
+        if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
         toast(missing ? `Wpis w kolejce. ${missing}` : "Wpis zapisany w kolejce offline.");
         return;
       }
+      let savedReceipt = null;
       try {
         setBusy("save");
         await verifySyncReady(syncSettings);
         const receipt = await sync.submitEntry(syncSettings, entry);
+        savedReceipt = receipt;
         applyReceipt(receipt);
       } catch (syncError) {
         queue.push(entry);
+        if (entry.fuel === "LPG") registerReceiptCandidate(entry, null, false);
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
+        if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
         toast(`Wpis został w kolejce. ${friendlySyncError(syncError)}`);
         return;
       } finally {
         setBusy("");
       }
+      if (entry.fuel === "LPG") registerReceiptCandidate(entry, savedReceipt, false);
       clearEntryDraft();
       saveAll();
       setActiveEdit("odometer");
+      if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
       toast("Wpis wysłany do arkusza.");
     } catch (error) {
       toast(error.message || "Nie udało się zapisać wpisu.");
@@ -916,6 +1346,7 @@
       try {
         const receipt = await sync.submitEntry(syncSettings, entry);
         applyReceipt(receipt);
+        await tryUploadReceiptScansForReceipt(receipt, syncSettings);
         sent += 1;
       } catch (error) {
         remaining = queue.slice(index);
@@ -1029,10 +1460,40 @@
       syncQueue();
     });
     els.refreshButton.addEventListener("click", function () {
+      if (Date.now() < suppressReceiptActionClickUntil) return;
       playSound("other");
-      refreshConfig().catch(function (error) {
-        toast(friendlySyncError(error) || "Nie udało się pobrać danych.");
-      });
+      handleReceiptCloudAction();
+    });
+    els.refreshButton.addEventListener("pointerdown", startReceiptCloudLongPress);
+    els.refreshButton.addEventListener("pointerup", stopReceiptCloudLongPress);
+    els.refreshButton.addEventListener("pointercancel", stopReceiptCloudLongPress);
+    els.refreshButton.addEventListener("pointerleave", stopReceiptCloudLongPress);
+
+    els.receiptYesButton.addEventListener("click", function () {
+      playSound("other");
+      showReceiptSource(receiptPromptEntryId);
+    });
+    els.receiptLaterButton.addEventListener("click", function () {
+      playSound("other");
+      chooseReceiptLater();
+    });
+    els.receiptCameraButton.addEventListener("click", function () {
+      playSound("other");
+      startReceiptFileChoice("camera");
+    });
+    els.receiptGalleryButton.addEventListener("click", function () {
+      playSound("other");
+      startReceiptFileChoice("gallery");
+    });
+    els.receiptCancelButton.addEventListener("click", function () {
+      playSound("other");
+      hideReceiptDialog();
+    });
+    els.receiptCameraInput.addEventListener("change", function () {
+      handleReceiptFileSelected(els.receiptCameraInput.files && els.receiptCameraInput.files[0]);
+    });
+    els.receiptGalleryInput.addEventListener("change", function () {
+      handleReceiptFileSelected(els.receiptGalleryInput.files && els.receiptGalleryInput.files[0]);
     });
 
     els.settingsToggle.addEventListener("click", function () {
@@ -1102,7 +1563,10 @@
       "refreshButton", "settingsPanel", "endpointInput", "pinInput",
       "saveSettingsButton", "testSettingsButton", "queueList", "toast",
       "inlineKeypad", "inlineKeypadGrid", "syncWorkingPanel", "syncWorkingText",
-      "appVersionLabel", "queuePanel"
+      "appVersionLabel", "queuePanel", "receiptDialog", "receiptQuestionText",
+      "receiptDecisionActions", "receiptSourceActions", "receiptYesButton",
+      "receiptLaterButton", "receiptCameraButton", "receiptGalleryButton",
+      "receiptCancelButton", "receiptCameraInput", "receiptGalleryInput"
     ].forEach(function (id) {
       els[id] = $(id);
     });
