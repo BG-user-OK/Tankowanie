@@ -14,6 +14,7 @@
   let results = storage.getResults();
   let activeEdit = "odometer";
   let keypadReady = false;
+  let busyAction = "";
 
   function $(id) {
     return document.getElementById(id);
@@ -66,11 +67,11 @@
       fuels: {}
     }, value || {});
     base.fuels = Object.assign({
-      LPG: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null },
-      E98: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null }
+      LPG: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null },
+      E98: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null }
     }, base.fuels || {});
-    base.fuels.LPG = Object.assign({ suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null }, base.fuels.LPG || {});
-    base.fuels.E98 = Object.assign({ suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null }, base.fuels.E98 || {});
+    base.fuels.LPG = Object.assign({ suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null }, base.fuels.LPG || {});
+    base.fuels.E98 = Object.assign({ suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null }, base.fuels.E98 || {});
     return base;
   }
 
@@ -144,9 +145,25 @@
     return (liters / distance) * 100;
   }
 
+  function entryConsumption(entry) {
+    const previous = previousOdometerForFuel(entry.fuel);
+    const liters = parseDecimal(entry.liters);
+    const current = numberOrNull(entry.odometer);
+    if (!previous || !current || current <= previous || !Number.isFinite(liters) || liters <= 0) {
+      return { distance: null, consumption: null, previousOdometer: previous || null };
+    }
+    const distance = Math.trunc(current - previous);
+    return {
+      distance,
+      consumption: (liters / distance) * 100,
+      previousOdometer: previous
+    };
+  }
+
   function hasMissingPreviousData() {
     return FUELS.some(function (fuel) {
-      return !previousOdometerForFuel(fuel);
+      const fuelHint = hints.fuels[fuel] || {};
+      return !previousOdometerForFuel(fuel) || !parseDecimal(fuelHint.lastConsumption);
     });
   }
 
@@ -175,6 +192,17 @@
     storage.saveQueue(queue);
     storage.saveHints(hints);
     storage.saveResults(results);
+  }
+
+  function mergeMeaningful(target, source) {
+    const result = Object.assign({}, target || {});
+    Object.keys(source || {}).forEach(function (key) {
+      const value = source[key];
+      if (value !== null && value !== undefined && value !== "") {
+        result[key] = value;
+      }
+    });
+    return result;
   }
 
   function toast(message) {
@@ -217,6 +245,35 @@
 
   function updateOnlineState() {
     els.onlineState.textContent = navigator.onLine ? "online" : "offline";
+  }
+
+  function busyText(action) {
+    if (action === "save") return "Wysyłanie do arkusza...";
+    if (action === "sync") return "Synchronizacja...";
+    if (action === "data") return "Pobieranie danych...";
+    return "Praca online...";
+  }
+
+  function renderBusy() {
+    const isBusy = !!busyAction;
+    if (!els.inlineKeypad || !els.syncWorkingPanel) return;
+    els.inlineKeypad.hidden = isBusy;
+    els.syncWorkingPanel.hidden = !isBusy;
+    if (els.syncWorkingText) els.syncWorkingText.textContent = busyText(busyAction);
+    [
+      { action: "save", element: els.saveButton },
+      { action: "sync", element: els.syncButton },
+      { action: "data", element: els.refreshButton }
+    ].forEach(function (item) {
+      if (!item.element) return;
+      item.element.classList.toggle("action-busy", busyAction === item.action);
+      item.element.disabled = isBusy;
+    });
+  }
+
+  function setBusy(action) {
+    busyAction = action || "";
+    renderBusy();
   }
 
   function fieldHtml(value, isStale) {
@@ -281,6 +338,10 @@
     element.classList.toggle("pending-value", !entered);
   }
 
+  function setEmptyInactiveState(element, empty, active) {
+    element.classList.toggle("empty-inactive", !!empty && !active);
+  }
+
   function renderDistance() {
     const distance = distanceSinceLast();
     const box = els.distanceValue.closest(".distance-box");
@@ -317,6 +378,9 @@
     els.odometerButton.classList.toggle("active-edit", odometerActive);
     els.priceButton.classList.toggle("active-edit", priceActive);
     els.litersButton.classList.toggle("active-edit", litersActive);
+    setEmptyInactiveState(els.odometerButton, !draft.odometer, odometerActive);
+    setEmptyInactiveState(els.priceButton, !draft.pumpPrice, priceActive);
+    setEmptyInactiveState(els.litersButton, !parseDecimal(draft.liters), litersActive);
 
     if (odometerActive) {
       els.odometerValue.innerHTML = keypad.getDisplayHtml();
@@ -366,9 +430,14 @@
 
   function renderResults() {
     const provisional = localConsumption();
+    const fuelHint = activeFuelHints();
+    const lastConsumption = parseDecimal(fuelHint.lastConsumption);
     if (provisional) {
       els.lastLpgResult.textContent = formatConsumption(provisional);
       els.lastSheetRead.textContent = "";
+    } else if (lastConsumption) {
+      els.lastLpgResult.textContent = formatConsumption(lastConsumption);
+      els.lastSheetRead.textContent = fuelHint.lastDate || results.lastReadAt || "";
     } else {
       els.lastLpgResult.textContent = results.lastLpgResult || "--";
       els.lastSheetRead.textContent = results.lastReadAt || "";
@@ -404,10 +473,12 @@
 
     els.endpointInput.value = settings.endpointUrl || "";
     els.pinInput.value = settings.pin || "";
+    if (els.appVersionLabel) els.appVersionLabel.textContent = storage.APP_VERSION;
     els.syncState.textContent = results.lastSyncAt ? `sync ${results.lastSyncAt}` : "brak sync";
     els.queueState.textContent = `q: ${queue.length}`;
     renderQueue();
     updateOnlineState();
+    renderBusy();
   }
 
   function renderQueue() {
@@ -432,7 +503,11 @@
       ? sheetDiscount
       : previousDiscount !== null && previousDiscount >= 0 ? previousDiscount : 0.21;
     hints.latestOdometer = config.latestOdometer || hints.latestOdometer || null;
-    hints.fuels = normalizeHints({ fuels: config.fuels || hints.fuels }).fuels;
+    const incomingFuels = config.fuels || {};
+    FUELS.forEach(function (fuel) {
+      hints.fuels[fuel] = mergeMeaningful(hints.fuels[fuel], incomingFuels[fuel]);
+    });
+    hints.fuels = normalizeHints({ fuels: hints.fuels }).fuels;
     results.monthlyLabel = config.monthlyLabel || results.monthlyLabel || "";
     results.monthlyAverage = config.monthlyAverage || results.monthlyAverage || "";
     results.lastLpgResult = config.lastLpgResult || results.lastLpgResult || "";
@@ -454,10 +529,15 @@
       }
       return null;
     }
-    const config = await sync.getConfig(syncSettings);
-    applyConfig(config);
-    if (!silent) toast("Dane pobrane z arkusza.");
-    return config;
+    setBusy("data");
+    try {
+      const config = await sync.getConfig(syncSettings);
+      applyConfig(config);
+      if (!silent) toast("Dane pobrane z arkusza.");
+      return config;
+    } finally {
+      setBusy("");
+    }
   }
 
   async function verifySyncReady(syncSettings) {
@@ -503,9 +583,16 @@
 
   function rememberEntryHints(entry) {
     const fuelHint = hints.fuels[entry.fuel] || {};
+    const entryStats = entryConsumption(entry);
     fuelHint.suggestedPumpPrice = entry.pumpPrice;
     fuelHint.lastPaidPrice = entry.discountedPrice;
     fuelHint.lastOdometer = entry.odometer;
+    fuelHint.lastLiters = entry.liters;
+    fuelHint.lastDate = entry.refuelDate;
+    fuelHint.previousOdometer = entryStats.previousOdometer;
+    fuelHint.lastDistance = entryStats.distance;
+    fuelHint.lastConsumption = entryStats.consumption;
+    fuelHint.provisional = true;
     hints.fuels[entry.fuel] = fuelHint;
     hints.latestOdometer = Math.max(Number(hints.latestOdometer || 0), entry.odometer);
   }
@@ -535,6 +622,7 @@
         return;
       }
       try {
+        setBusy("save");
         await verifySyncReady(syncSettings);
         const receipt = await sync.submitEntry(syncSettings, entry);
         applyReceipt(receipt);
@@ -545,6 +633,8 @@
         setActiveEdit("odometer");
         toast(`Wpis został w kolejce. ${friendlySyncError(syncError)}`);
         return;
+      } finally {
+        setBusy("");
       }
       clearEntryDraft();
       saveAll();
@@ -559,6 +649,11 @@
     if (receipt && receipt.config) applyConfig(receipt.config);
     results.lastSyncAt = new Date().toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit" });
     if (receipt && receipt.row) {
+      if (receipt.fuel && receipt.postResult && hints.fuels[receipt.fuel]) {
+        const postConsumption = parseDecimal(receipt.postResult);
+        hints.fuels[receipt.fuel].lastConsumption = postConsumption !== null ? postConsumption : receipt.postResult;
+        hints.fuels[receipt.fuel].provisional = false;
+      }
       results.lastLpgResult = receipt.fuel === "LPG" && receipt.postResult ? receipt.postResult : results.lastLpgResult;
     }
     saveAll();
@@ -579,11 +674,13 @@
       render();
       return;
     }
+    setBusy("sync");
     try {
       const config = await verifySyncReady(syncSettings);
       applyConfig(config);
     } catch (error) {
       toast(friendlySyncError(error));
+      setBusy("");
       return;
     }
     let sent = 0;
@@ -600,6 +697,7 @@
         break;
       }
     }
+    setBusy("");
     if (!remaining.length) queue = [];
     else queue = remaining;
     saveAll();
@@ -732,7 +830,7 @@
       "discountTotalValue", "paidTotalValue", "saveButton", "syncButton",
       "refreshButton", "settingsPanel", "endpointInput", "pinInput",
       "saveSettingsButton", "testSettingsButton", "queueList", "toast",
-      "inlineKeypad"
+      "inlineKeypad", "syncWorkingPanel", "syncWorkingText", "appVersionLabel"
     ].forEach(function (id) {
       els[id] = $(id);
     });

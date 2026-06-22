@@ -1,6 +1,6 @@
 # Tankowanie
 
-Version: v1.2.5
+Version: v1.3.0
 
 Mobile-first PWA for fast refueling entry. The Google Apps Script endpoint and PIN are configured locally in the app settings on the phone.
 
@@ -52,6 +52,8 @@ fallback/source: 'zbiór danych LPG'!BK8:BK9
 ```
 
 Pump/display price is kept only in the phone app as a next-entry hint. The Sheet receives only the discounted price.
+
+The app config response also returns the last completed refueling data separately for LPG and E98, including last odometer, liters, date, distance, and last consumption. The phone may show a local provisional value while entering or while offline; the Sheet value overwrites it after fetch/sync.
 
 ## Local Test
 
