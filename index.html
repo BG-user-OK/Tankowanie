@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=1.3.0">
+  <link rel="stylesheet" href="styles.css?v=1.4.0">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -15,15 +15,22 @@
       <section class="top-row">
         <div class="result-band">
           <div>
-            <span class="label">Ostatnie</span>
+            <span class="label">Dziś</span>
             <div class="result-value">
-              <strong id="lastLpgResult">--</strong>
+              <strong id="todayResultValue">--</strong>
               <span class="result-unit">l/100</span>
             </div>
             <span id="lastSheetRead" class="visually-hidden">brak danych</span>
           </div>
           <div>
-            <span class="label" id="monthlyHeading">średnio Czerwiec</span>
+            <span class="label">Ostatnie</span>
+            <div class="result-value">
+              <strong id="lastResultValue">--</strong>
+              <span class="result-unit">l/100</span>
+            </div>
+          </div>
+          <div>
+            <span class="label" id="monthlyHeading">Średnio miesiąc</span>
             <div class="result-value">
               <strong id="monthlyAverage">--</strong>
               <span class="result-unit">l/100</span>
@@ -40,10 +47,13 @@
 
       <section class="entry-panel">
         <div class="meter-row">
-          <input id="refuelDate" class="entered-value" type="date" aria-label="Data tankowania">
           <button id="odometerButton" class="field-button" type="button" aria-label="Licznik">
             <span class="field-main" id="odometerValue">--</span>
           </button>
+          <button id="dateButton" class="field-button date-button" type="button" aria-label="Data tankowania">
+            <span class="field-main date-value" id="dateValue">--</span>
+          </button>
+          <input id="refuelDate" class="native-date-input" type="date" aria-label="Data tankowania">
           <div class="distance-box" aria-label="Dystans od ostatniego tankowania">
             <strong id="distanceValue">--</strong>
             <span>km</span>
@@ -133,7 +143,7 @@
             <span>PIN</span>
             <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
           </label>
-          <span class="settings-version" id="appVersionLabel">v1.3.0</span>
+          <span class="settings-version" id="appVersionLabel">v1.4.0</span>
         </div>
 
         <div class="actions compact">
@@ -146,9 +156,10 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="storage.js?v=1.3.0"></script>
-  <script src="keypad.js?v=1.3.0"></script>
-  <script src="sync.js?v=1.3.0"></script>
-  <script src="app.js?v=1.3.0"></script>
+  <script src="storage.js?v=1.4.0"></script>
+  <script src="keypad.js?v=1.4.0"></script>
+  <script src="sync.js?v=1.4.0"></script>
+  <script src="sounds.js?v=1.4.0"></script>
+  <script src="app.js?v=1.4.0"></script>
 </body>
 </html>

@@ -1,12 +1,13 @@
-const CACHE_NAME = "tankowanie-v1.3.0";
+const CACHE_NAME = "tankowanie-v1.4.0";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=1.3.0",
-  "./storage.js?v=1.3.0",
-  "./keypad.js?v=1.3.0",
-  "./sync.js?v=1.3.0",
-  "./app.js?v=1.3.0",
+  "./styles.css?v=1.4.0",
+  "./storage.js?v=1.4.0",
+  "./keypad.js?v=1.4.0",
+  "./sync.js?v=1.4.0",
+  "./sounds.js?v=1.4.0",
+  "./app.js?v=1.4.0",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
@@ -39,8 +40,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+          }
           return response;
         })
         .catch(() => caches.match("./index.html"))
@@ -51,8 +54,10 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => (
       cached || fetch(event.request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
         return response;
       })
     ))

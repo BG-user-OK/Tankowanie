@@ -7,6 +7,7 @@
 
   const els = {};
   const FUELS = ["LPG", "E98"];
+  const ROMAN_MONTHS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
   let settings = storage.getSettings();
   let draft = storage.getDraft();
   let queue = storage.getQueue();
@@ -60,23 +61,138 @@
     return liters.toFixed(2).replace(".", ",");
   }
 
+  function normalizeDateIso(value) {
+    const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+  }
+
+  function formatShortDate(value) {
+    const iso = normalizeDateIso(value);
+    if (!iso) return "--";
+    const parts = iso.split("-").map(Number);
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return "--";
+    const day = String(parts[2]).padStart(2, "0");
+    const month = ROMAN_MONTHS[parts[1] - 1] || "";
+    const year = String(parts[0]).slice(-2);
+    return `${day}.${month}'${year}`;
+  }
+
+  function emptyFuelHint() {
+    return {
+      suggestedPumpPrice: null,
+      lastPaidPrice: null,
+      lastOdometer: null,
+      lastLiters: null,
+      lastDate: "",
+      lastDateIso: "",
+      previousOdometer: null,
+      lastDistance: null,
+      lastConsumption: null,
+      history: []
+    };
+  }
+
+  function mergeFilled(target, source) {
+    const result = Object.assign({}, target || {});
+    Object.keys(source || {}).forEach(function (key) {
+      const value = source[key];
+      if (value !== null && value !== undefined && value !== "") result[key] = value;
+    });
+    return result;
+  }
+
+  function normalizeHistoryEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const dateIso = normalizeDateIso(entry.dateIso || entry.refuelDate || entry.date || entry.lastDate);
+    const odometer = numberOrNull(entry.odometer || entry.lastOdometer);
+    const liters = parseDecimal(entry.liters || entry.lastLiters);
+    const paidPrice = parseDecimal(entry.paidPrice || entry.discountedPrice || entry.lastPaidPrice);
+    const previousOdometer = numberOrNull(entry.previousOdometer);
+    const distance = numberOrNull(entry.distance || entry.lastDistance);
+    const consumption = parseDecimal(entry.consumption || entry.lastConsumption);
+    if (!dateIso && !odometer && consumption === null) return null;
+    return {
+      entryId: String(entry.entryId || ""),
+      dateIso,
+      date: String(entry.date || entry.lastDate || dateIso || ""),
+      odometer: odometer || "",
+      liters: liters !== null ? Number(liters.toFixed(2)) : "",
+      paidPrice: paidPrice !== null ? Number(paidPrice.toFixed(2)) : "",
+      previousOdometer: previousOdometer || "",
+      distance: distance || "",
+      consumption: consumption !== null ? Number(consumption.toFixed(2)) : "",
+      source: String(entry.source || "")
+    };
+  }
+
+  function historyKey(entry) {
+    if (entry.entryId) return `id:${entry.entryId}`;
+    return `v:${entry.dateIso}|${entry.odometer}|${entry.liters}`;
+  }
+
+  function sortHistory(history) {
+    return history.sort(function (a, b) {
+      if (a.dateIso !== b.dateIso) return a.dateIso < b.dateIso ? 1 : -1;
+      return Number(b.odometer || 0) - Number(a.odometer || 0);
+    });
+  }
+
+  function upsertHistory(history, entries) {
+    const next = (Array.isArray(history) ? history : [])
+      .map(normalizeHistoryEntry)
+      .filter(Boolean);
+    const incoming = Array.isArray(entries) ? entries : [entries];
+    incoming.forEach(function (entry) {
+      const normalized = normalizeHistoryEntry(entry);
+      if (!normalized) return;
+      const key = historyKey(normalized);
+      const index = next.findIndex(function (item) {
+        return historyKey(item) === key;
+      });
+      if (index >= 0) next[index] = mergeFilled(next[index], normalized);
+      else next.push(normalized);
+    });
+    return sortHistory(next).slice(0, 16);
+  }
+
+  function normalizeFuelHint(value) {
+    const base = Object.assign(emptyFuelHint(), value || {});
+    let history = upsertHistory([], Array.isArray(base.history) ? base.history : []);
+    history = upsertHistory(history, {
+      dateIso: base.lastDateIso || normalizeDateIso(base.lastDate),
+      date: base.lastDate,
+      odometer: base.lastOdometer,
+      liters: base.lastLiters,
+      paidPrice: base.lastPaidPrice,
+      previousOdometer: base.previousOdometer,
+      distance: base.lastDistance,
+      consumption: base.lastConsumption,
+      source: base.provisional ? "local" : "sheet"
+    });
+    base.history = history;
+    if (!base.lastDateIso && history[0]) base.lastDateIso = history[0].dateIso;
+    return base;
+  }
+
   function normalizeHints(value) {
     const base = Object.assign({
       discountPerLiter: 0.21,
       latestOdometer: null,
       fuels: {}
     }, value || {});
-    base.fuels = Object.assign({
-      LPG: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null },
-      E98: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null }
-    }, base.fuels || {});
-    base.fuels.LPG = Object.assign({ suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null }, base.fuels.LPG || {});
-    base.fuels.E98 = Object.assign({ suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null }, base.fuels.E98 || {});
+    base.fuels = base.fuels || {};
+    base.fuels.LPG = normalizeFuelHint(base.fuels.LPG);
+    base.fuels.E98 = normalizeFuelHint(base.fuels.E98);
     return base;
   }
 
   function activeFuelHints() {
     return hints.fuels[draft.fuel] || {};
+  }
+
+  function playSound(group) {
+    const sounds = window.TankowanieSounds;
+    if (sounds && typeof sounds.play === "function") sounds.play(group);
   }
 
   function odometerHintValue() {
@@ -143,6 +259,27 @@
     const liters = parseDecimal(draft.liters);
     if (!distance || !Number.isFinite(liters) || liters <= 0) return null;
     return (liters / distance) * 100;
+  }
+
+  function completedResultsForFuel(fuel) {
+    const today = todayIso();
+    const fuelHint = hints.fuels[fuel] || {};
+    const history = (Array.isArray(fuelHint.history) ? fuelHint.history : [])
+      .map(normalizeHistoryEntry)
+      .filter(function (entry) {
+        return entry && parseDecimal(entry.consumption) !== null;
+      });
+    const todayEntry = history.find(function (entry) {
+      return entry.dateIso === today;
+    }) || null;
+    const lastEntry = history.find(function (entry) {
+      return entry.dateIso !== today;
+    }) || null;
+    return {
+      today: todayEntry,
+      last: lastEntry,
+      latest: todayEntry || lastEntry || history[0] || null
+    };
   }
 
   function entryConsumption(entry) {
@@ -429,21 +566,22 @@
   }
 
   function renderResults() {
-    const provisional = localConsumption();
-    const fuelHint = activeFuelHints();
-    const lastConsumption = parseDecimal(fuelHint.lastConsumption);
-    if (provisional) {
-      els.lastLpgResult.textContent = formatConsumption(provisional);
-      els.lastSheetRead.textContent = "";
-    } else if (lastConsumption) {
-      els.lastLpgResult.textContent = formatConsumption(lastConsumption);
-      els.lastSheetRead.textContent = fuelHint.lastDate || results.lastReadAt || "";
+    const completed = completedResultsForFuel(draft.fuel);
+    const todayConsumption = completed.today ? parseDecimal(completed.today.consumption) : null;
+    const lastConsumption = completed.last ? parseDecimal(completed.last.consumption) : null;
+    const latestConsumption = completed.latest ? parseDecimal(completed.latest.consumption) : null;
+    const sheetMonthly = parseDecimal(results.monthlyAverage);
+
+    els.todayResultValue.textContent = todayConsumption !== null ? formatConsumption(todayConsumption) : "--";
+    els.lastResultValue.textContent = lastConsumption !== null ? formatConsumption(lastConsumption) : "--";
+    els.lastSheetRead.textContent = (completed.today && completed.today.date) || (completed.last && completed.last.date) || results.lastReadAt || "";
+
+    if (draft.fuel === "E98") {
+      els.monthlyAverage.textContent = latestConsumption !== null ? formatConsumption(latestConsumption) : "--";
     } else {
-      els.lastLpgResult.textContent = results.lastLpgResult || "--";
-      els.lastSheetRead.textContent = results.lastReadAt || "";
+      els.monthlyAverage.textContent = sheetMonthly !== null ? formatConsumption(sheetMonthly) : (results.monthlyAverage || "--");
     }
-    els.monthlyAverage.textContent = results.monthlyAverage || "--";
-    els.monthlyHeading.textContent = results.monthlyLabel || "średnio Czerwiec";
+    els.monthlyHeading.textContent = "Średnio miesiąc";
     els.monthlyLabel.textContent = "";
   }
 
@@ -465,7 +603,8 @@
     els.fuelLpg.classList.toggle("active", draft.fuel === "LPG");
     els.fuelE98.classList.toggle("active", draft.fuel === "E98");
     els.refuelDate.value = draft.date || todayIso();
-    setValueState(els.refuelDate, !!els.refuelDate.value);
+    if (els.dateValue) els.dateValue.textContent = formatShortDate(els.refuelDate.value);
+    if (els.dateButton) setValueState(els.dateButton, !!els.refuelDate.value);
 
     renderEditableFields();
     renderResults();
@@ -482,6 +621,7 @@
   }
 
   function renderQueue() {
+    if (els.syncButton) els.syncButton.hidden = !queue.length;
     if (!queue.length) {
       els.queueList.textContent = "Brak wpisów w kolejce.";
       return;
@@ -505,7 +645,11 @@
     hints.latestOdometer = config.latestOdometer || hints.latestOdometer || null;
     const incomingFuels = config.fuels || {};
     FUELS.forEach(function (fuel) {
-      hints.fuels[fuel] = mergeMeaningful(hints.fuels[fuel], incomingFuels[fuel]);
+      const existing = normalizeFuelHint(hints.fuels[fuel]);
+      const incoming = normalizeFuelHint(incomingFuels[fuel]);
+      const merged = mergeMeaningful(existing, incomingFuels[fuel]);
+      merged.history = upsertHistory(existing.history, incoming.history);
+      hints.fuels[fuel] = normalizeFuelHint(merged);
     });
     hints.fuels = normalizeHints({ fuels: hints.fuels }).fuels;
     results.monthlyLabel = config.monthlyLabel || results.monthlyLabel || "";
@@ -584,14 +728,30 @@
   function rememberEntryHints(entry) {
     const fuelHint = hints.fuels[entry.fuel] || {};
     const entryStats = entryConsumption(entry);
+    const entryConsumptionValue = entryStats.consumption !== null
+      ? Number(entryStats.consumption.toFixed(2))
+      : null;
     fuelHint.suggestedPumpPrice = entry.pumpPrice;
     fuelHint.lastPaidPrice = entry.discountedPrice;
     fuelHint.lastOdometer = entry.odometer;
     fuelHint.lastLiters = entry.liters;
     fuelHint.lastDate = entry.refuelDate;
+    fuelHint.lastDateIso = entry.refuelDate;
     fuelHint.previousOdometer = entryStats.previousOdometer;
     fuelHint.lastDistance = entryStats.distance;
-    fuelHint.lastConsumption = entryStats.consumption;
+    fuelHint.lastConsumption = entryConsumptionValue;
+    fuelHint.history = upsertHistory(fuelHint.history, {
+      entryId: entry.entryId,
+      dateIso: entry.refuelDate,
+      date: entry.refuelDate,
+      odometer: entry.odometer,
+      liters: entry.liters,
+      paidPrice: entry.discountedPrice,
+      previousOdometer: entryStats.previousOdometer,
+      distance: entryStats.distance,
+      consumption: entryConsumptionValue,
+      source: "local"
+    });
     fuelHint.provisional = true;
     hints.fuels[entry.fuel] = fuelHint;
     hints.latestOdometer = Math.max(Number(hints.latestOdometer || 0), entry.odometer);
@@ -652,6 +812,10 @@
       if (receipt.fuel && receipt.postResult && hints.fuels[receipt.fuel]) {
         const postConsumption = parseDecimal(receipt.postResult);
         hints.fuels[receipt.fuel].lastConsumption = postConsumption !== null ? postConsumption : receipt.postResult;
+        if (postConsumption !== null && Array.isArray(hints.fuels[receipt.fuel].history) && hints.fuels[receipt.fuel].history[0]) {
+          hints.fuels[receipt.fuel].history[0].consumption = Number(postConsumption.toFixed(2));
+          hints.fuels[receipt.fuel].history[0].source = "sheet";
+        }
         hints.fuels[receipt.fuel].provisional = false;
       }
       results.lastLpgResult = receipt.fuel === "LPG" && receipt.postResult ? receipt.postResult : results.lastLpgResult;
@@ -730,12 +894,27 @@
     window.addEventListener("online", updateOnlineState);
     window.addEventListener("offline", updateOnlineState);
 
+    els.inlineKeypad.addEventListener("click", function (event) {
+      if (event.target && event.target.closest && event.target.closest("[data-key]")) playSound("keypad");
+    }, true);
+
     [els.fuelLpg, els.fuelE98].forEach(function (button) {
       button.addEventListener("click", function () {
+        playSound("other");
         draft.fuel = button.dataset.fuel;
         saveAll();
         setActiveEdit("odometer");
       });
+    });
+
+    els.dateButton.addEventListener("click", function () {
+      playSound("other");
+      if (typeof els.refuelDate.showPicker === "function") {
+        els.refuelDate.showPicker();
+      } else {
+        els.refuelDate.focus();
+        els.refuelDate.click();
+      }
     });
 
     els.refuelDate.addEventListener("change", function () {
@@ -745,34 +924,47 @@
     });
 
     els.odometerButton.addEventListener("click", function () {
+      playSound("field");
       setActiveEdit("odometer", true);
     });
 
     els.priceButton.addEventListener("click", function () {
+      playSound("field");
       setActiveEdit("price", true);
     });
 
     els.discountButton.addEventListener("click", function () {
+      playSound("other");
       setActiveEdit("discount", true);
     });
 
     els.litersButton.addEventListener("click", function () {
+      playSound("field");
       setActiveEdit("liters", true);
     });
 
-    els.saveButton.addEventListener("click", saveEntry);
-    els.syncButton.addEventListener("click", syncQueue);
+    els.saveButton.addEventListener("click", function () {
+      playSound("other");
+      saveEntry();
+    });
+    els.syncButton.addEventListener("click", function () {
+      playSound("other");
+      syncQueue();
+    });
     els.refreshButton.addEventListener("click", function () {
+      playSound("other");
       refreshConfig().catch(function (error) {
         toast(friendlySyncError(error) || "Nie udało się pobrać danych.");
       });
     });
 
     els.settingsToggle.addEventListener("click", function () {
+      playSound("other");
       els.settingsPanel.hidden = !els.settingsPanel.hidden;
     });
 
     els.saveSettingsButton.addEventListener("click", function () {
+      playSound("other");
       settings.endpointUrl = els.endpointInput.value.trim();
       settings.pin = els.pinInput.value.trim();
       storage.saveSettings(settings);
@@ -782,6 +974,7 @@
     });
 
     els.testSettingsButton.addEventListener("click", async function () {
+      playSound("other");
       settings.endpointUrl = els.endpointInput.value.trim();
       settings.pin = els.pinInput.value.trim();
       storage.saveSettings(settings);
@@ -823,8 +1016,9 @@
   function cacheElements() {
     [
       "settingsToggle", "onlineState", "syncState", "queueState", "monthlyAverage",
-      "monthlyLabel", "monthlyHeading", "lastLpgResult", "lastSheetRead", "fuelLpg",
-      "fuelE98", "refuelDate", "odometerButton", "odometerValue", "distanceValue",
+      "monthlyLabel", "monthlyHeading", "todayResultValue", "lastResultValue",
+      "lastSheetRead", "fuelLpg", "fuelE98", "refuelDate", "dateButton",
+      "dateValue", "odometerButton", "odometerValue", "distanceValue",
       "priceButton", "pumpPriceValue", "discountButton", "discountValue",
       "paidPriceValue", "litersButton", "litersValue", "pumpTotalValue",
       "discountTotalValue", "paidTotalValue", "saveButton", "syncButton",

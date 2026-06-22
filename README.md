@@ -1,6 +1,6 @@
 # Tankowanie
 
-Version: v1.3.0
+Version: v1.4.0
 
 Mobile-first PWA for fast refueling entry. The Google Apps Script endpoint and PIN are configured locally in the app settings on the phone.
 
@@ -47,13 +47,26 @@ T{row} = refueling date
 Displayed monthly LPG result:
 
 ```text
-'wprowadź tankowanie'!B17:C17
-fallback/source: 'zbiór danych LPG'!BK8:BK9
+'aktualne spalanie LPG'!BK9
 ```
+
+For E98, the monthly result in the app follows the latest E98 consumption because gasoline is refueled about once per month.
 
 Pump/display price is kept only in the phone app as a next-entry hint. The Sheet receives only the discounted price.
 
-The app config response also returns the last completed refueling data separately for LPG and E98, including last odometer, liters, date, distance, and last consumption. The phone may show a local provisional value while entering or while offline; the Sheet value overwrites it after fetch/sync.
+The app config response also returns recent completed refueling data separately for LPG and E98, including odometer, liters, date, distance, and consumption. The phone uses that history for `Dziś`, `Ostatnie`, and distance hints. Sheet values overwrite provisional local values after fetch/sync.
+
+## Sound Assets
+
+Optional click sounds live in:
+
+```text
+dzwieki/klawisze_numeryczne.wav
+dzwieki/pola_tankowania.wav
+dzwieki/pozostale_funkcje.wav
+```
+
+The app also tries `.mp3` and `.ogg` with the same base names. Missing sound files are ignored by the app.
 
 ## Local Test
 

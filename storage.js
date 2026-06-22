@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v1.3.0";
+  const APP_VERSION = "v1.4.0";
   const API_VERSION = "TANKOWANIE_API_V1";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
@@ -84,8 +84,8 @@
       discountPerLiter: 0.21,
       latestOdometer: null,
       fuels: {
-        LPG: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null },
-        E98: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", previousOdometer: null, lastDistance: null, lastConsumption: null }
+        LPG: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", lastDateIso: "", previousOdometer: null, lastDistance: null, lastConsumption: null, history: [] },
+        E98: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", lastDateIso: "", previousOdometer: null, lastDistance: null, lastConsumption: null, history: [] }
       }
     }, loadJSON(KEYS.hints, {}));
   }

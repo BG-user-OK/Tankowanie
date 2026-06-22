@@ -20,6 +20,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -70,7 +74,7 @@ input {
 
 .result-band {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
 }
@@ -88,10 +92,11 @@ input {
 
 .result-band > div {
   min-height: 72px;
-  padding: 8px;
+  padding: 7px 6px;
   display: grid;
   align-content: center;
   gap: 4px;
+  min-width: 0;
 }
 
 .label,
@@ -101,19 +106,22 @@ footer,
 }
 
 .label {
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .result-value {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 4px;
+  justify-content: flex-start;
+  gap: 3px;
+  min-width: 0;
 }
 
 .result-value strong {
-  font-size: 24px;
+  font-size: 21px;
   line-height: 1;
   color: var(--ink);
 }
@@ -174,7 +182,7 @@ footer,
 }
 
 .meter-row {
-  grid-template-columns: 118px minmax(0, 1fr) 72px;
+  grid-template-columns: minmax(0, 1fr) 96px 72px;
 }
 
 .price-grid {
@@ -208,6 +216,19 @@ input,
   background: var(--panel-raised);
   color: var(--yellow);
   padding: 7px 10px;
+}
+
+.native-date-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.date-button .field-main {
+  font-size: 18px;
+  white-space: nowrap;
 }
 
 input {
@@ -661,7 +682,7 @@ footer {
 body.editing-discount .result-band,
 body.editing-discount .sync-strip,
 body.editing-discount .fuel-switch,
-body.editing-discount #refuelDate,
+body.editing-discount #dateButton,
 body.editing-discount #odometerButton,
 body.editing-discount .distance-box,
 body.editing-discount #priceButton,
@@ -693,7 +714,23 @@ body.editing-discount footer {
   }
 
   .meter-row {
-    grid-template-columns: 112px minmax(0, 1fr) 64px;
+    grid-template-columns: minmax(0, 1fr) 86px 64px;
+  }
+
+  .result-band {
+    gap: 4px;
+  }
+
+  .result-band > div {
+    padding-inline: 5px;
+  }
+
+  .result-value strong {
+    font-size: 19px;
+  }
+
+  .date-button .field-main {
+    font-size: 16px;
   }
 
   .price-grid {
