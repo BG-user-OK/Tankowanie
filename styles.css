@@ -144,23 +144,23 @@ footer,
 
 .fuel-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  place-items: center;
   min-width: 0;
 }
 
-.fuel-switch button {
+.fuel-toggle {
   min-height: 72px;
   padding: 0;
-  font-size: 14px;
-  background: var(--panel-soft);
-  color: var(--muted);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f4f7fb;
 }
 
-.fuel-switch button.active {
-  background: var(--green);
-  border-color: var(--green);
-  color: #001f16;
+.fuel-toggle img {
+  display: block;
+  width: 100%;
+  height: 68px;
+  object-fit: contain;
 }
 
 .entry-panel,
@@ -340,13 +340,12 @@ input {
   min-width: 0.55em;
   padding-bottom: 3px;
   border-bottom: 4px solid var(--yellow);
-  color: var(--yellow);
-  text-shadow: 0 0 8px rgba(254, 243, 199, 0.35);
+  color: var(--green-dark);
   animation: cursorBlink 1s steps(2, start) infinite;
 }
 
 .cursor-digit.is-stale {
-  color: var(--yellow);
+  color: rgba(254, 243, 199, 0.45);
   opacity: 1;
   border-bottom-color: var(--yellow);
 }
@@ -358,7 +357,14 @@ input {
 }
 
 @keyframes cursorBlink {
+  0%,
+  48% {
+    border-bottom-color: var(--yellow);
+  }
   50% {
+    border-bottom-color: transparent;
+  }
+  100% {
     border-bottom-color: transparent;
   }
 }
@@ -590,14 +596,6 @@ h2 {
   border-top: 0;
 }
 
-footer {
-  display: flex;
-  justify-content: center;
-  padding: 8px 2px 4px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
 .toast {
   position: fixed;
   left: 50%;
@@ -683,13 +681,38 @@ footer {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.inline-keypad-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 calc((100% + 6px) / 4) 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: min(76%, 260px);
+  opacity: 0.16;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.inline-keypad-grid.fuel-lpg::before {
+  background-image: url("grafiki/LPG.png");
+}
+
+.inline-keypad-grid.fuel-e98::before {
+  background-image: url("grafiki/E98.png");
 }
 
 .inline-keypad-grid button {
+  position: relative;
+  z-index: 1;
   min-height: 75px;
   padding: 0;
   font-size: 28px;
-  background: #111827;
+  background: rgba(17, 24, 39, 0.86);
   transition: background-color 90ms ease, color 90ms ease, transform 80ms ease;
 }
 
@@ -720,6 +743,24 @@ body.editing-discount footer {
   opacity: 0.35;
 }
 
+.flota-footer {
+  min-height: 36px;
+  margin: 4px -10px -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e30613;
+  overflow: hidden;
+}
+
+.flota-footer img {
+  display: block;
+  width: auto;
+  height: 36px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
 @media (max-width: 390px) {
   .app-shell {
     padding: 7px 8px 10px;
@@ -729,9 +770,12 @@ body.editing-discount footer {
     grid-template-columns: minmax(0, 1fr) 88px;
   }
 
-  .fuel-switch button {
+  .fuel-toggle {
     min-height: 66px;
-    font-size: 13px;
+  }
+
+  .fuel-toggle img {
+    height: 62px;
   }
 
   .field-main {
@@ -802,6 +846,10 @@ body.editing-discount footer {
 
   .inline-keypad-grid button {
     min-height: 70px;
+  }
+
+  .flota-footer {
+    margin-inline: -8px;
   }
 
   .summary-part strong {

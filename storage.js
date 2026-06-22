@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v1.4.1";
+  const APP_VERSION = "v1.5.0";
   const API_VERSION = "TANKOWANIE_API_V1";
   const PREFIX = "tankowanie_v1";
   const KEYS = {

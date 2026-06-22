@@ -1,6 +1,6 @@
 # Tankowanie
 
-Version: v1.4.1
+Version: v1.5.0
 
 Mobile-first PWA for fast refueling entry. The Google Apps Script endpoint and PIN are configured locally in the app settings on the phone.
 
@@ -67,6 +67,16 @@ dzwieki/pozostale_funkcje.wav
 ```
 
 The app also tries `.mp3` and `.ogg` with the same base names. Missing sound files are ignored by the app.
+
+## Graphic Assets
+
+Fuel and footer graphics live in:
+
+```text
+grafiki/LPG.png
+grafiki/E98.png
+grafiki/Orlen-flota.jpg
+```
 
 ## Local Test
 

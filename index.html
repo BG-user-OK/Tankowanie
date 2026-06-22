@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=1.4.1">
+  <link rel="stylesheet" href="styles.css?v=1.5.0">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -39,10 +39,9 @@
           </div>
         </div>
 
-        <div class="fuel-switch" aria-label="Wybór paliwa">
-          <button id="fuelLpg" type="button" data-fuel="LPG" class="active">LPG</button>
-          <button id="fuelE98" type="button" data-fuel="E98" aria-label="Benzyna Verva 98 / E98">E98</button>
-        </div>
+        <button id="fuelToggle" class="fuel-switch fuel-toggle" type="button" aria-label="Wybór paliwa: LPG">
+          <img id="fuelToggleImage" src="grafiki/LPG.png" alt="LPG">
+        </button>
       </section>
 
       <section class="entry-panel">
@@ -95,7 +94,7 @@
       </section>
 
       <section class="inline-keypad" id="inlineKeypad" aria-label="Klawiatura">
-        <div class="inline-keypad-grid">
+        <div class="inline-keypad-grid" id="inlineKeypadGrid">
           <button type="button" data-key="1">1</button>
           <button type="button" data-key="2">2</button>
           <button type="button" data-key="3">3</button>
@@ -142,7 +141,7 @@
             <span>PIN</span>
             <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
           </label>
-          <span class="settings-version" id="appVersionLabel">v1.4.1</span>
+          <span class="settings-version" id="appVersionLabel">v1.5.0</span>
         </div>
 
         <div class="actions compact">
@@ -150,15 +149,18 @@
           <button id="testSettingsButton" type="button">Test</button>
         </div>
       </section>
+      <footer class="flota-footer" aria-label="Orlen Flota">
+        <img src="grafiki/Orlen-flota.jpg" alt="Orlen Flota">
+      </footer>
     </main>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="storage.js?v=1.4.1"></script>
-  <script src="keypad.js?v=1.4.1"></script>
-  <script src="sync.js?v=1.4.1"></script>
-  <script src="sounds.js?v=1.4.1"></script>
-  <script src="app.js?v=1.4.1"></script>
+  <script src="storage.js?v=1.5.0"></script>
+  <script src="keypad.js?v=1.5.0"></script>
+  <script src="sync.js?v=1.5.0"></script>
+  <script src="sounds.js?v=1.5.0"></script>
+  <script src="app.js?v=1.5.0"></script>
 </body>
 </html>

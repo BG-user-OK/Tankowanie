@@ -16,6 +16,7 @@
   let activeEdit = "odometer";
   let keypadReady = false;
   let busyAction = "";
+  let userAdjustedDate = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -75,6 +76,27 @@
     const month = ROMAN_MONTHS[parts[1] - 1] || "";
     const year = String(parts[0]).slice(-2);
     return `${day}.${month}'${year}`;
+  }
+
+  function isRefuelDraftEmpty() {
+    return !draft.odometer && !draft.pumpPrice && !parseDecimal(draft.liters);
+  }
+
+  function ensureDefaultDateForEmptyDraft() {
+    const today = todayIso();
+    if (!draft.date) {
+      draft.date = today;
+      return true;
+    }
+    if (isRefuelDraftEmpty() && !userAdjustedDate && draft.date !== today) {
+      draft.date = today;
+      return true;
+    }
+    return false;
+  }
+
+  function fuelImagePath(fuel) {
+    return fuel === "E98" ? "grafiki/E98.png" : "grafiki/LPG.png";
   }
 
   function emptyFuelHint() {
@@ -600,8 +622,20 @@
 
   function render() {
     document.body.classList.toggle("editing-discount", activeEdit === "discount");
-    els.fuelLpg.classList.toggle("active", draft.fuel === "LPG");
-    els.fuelE98.classList.toggle("active", draft.fuel === "E98");
+    if (ensureDefaultDateForEmptyDraft()) storage.saveDraft(draft);
+    if (els.fuelToggleImage) {
+      els.fuelToggleImage.src = fuelImagePath(draft.fuel);
+      els.fuelToggleImage.alt = draft.fuel;
+    }
+    if (els.fuelToggle) {
+      els.fuelToggle.setAttribute("aria-label", `Wybór paliwa: ${draft.fuel}`);
+      els.fuelToggle.title = draft.fuel;
+    }
+    if (els.inlineKeypadGrid) {
+      els.inlineKeypadGrid.classList.toggle("fuel-lpg", draft.fuel === "LPG");
+      els.inlineKeypadGrid.classList.toggle("fuel-e98", draft.fuel === "E98");
+    }
+    document.body.dataset.fuel = draft.fuel.toLowerCase();
     els.refuelDate.value = draft.date || todayIso();
     if (els.dateValue) els.dateValue.textContent = formatShortDate(els.refuelDate.value);
     if (els.dateButton) setValueState(els.dateButton, !!els.refuelDate.value);
@@ -764,6 +798,7 @@
     draft.discountPerLiterEdited = false;
     draft.liters = "";
     draft.date = todayIso();
+    userAdjustedDate = false;
   }
 
   function clearRefuelInputDraft() {
@@ -919,13 +954,11 @@
       if (event.target && event.target.closest && event.target.closest("[data-key]")) playSound("keypad");
     }, true);
 
-    [els.fuelLpg, els.fuelE98].forEach(function (button) {
-      button.addEventListener("click", function () {
-        playSound("other");
-        draft.fuel = button.dataset.fuel;
-        saveAll();
-        setActiveEdit("odometer");
-      });
+    els.fuelToggle.addEventListener("click", function () {
+      playSound("other");
+      draft.fuel = draft.fuel === "LPG" ? "E98" : "LPG";
+      saveAll();
+      setActiveEdit("odometer");
     });
 
     els.dateButton.addEventListener("click", function () {
@@ -939,6 +972,7 @@
     });
 
     els.refuelDate.addEventListener("change", function () {
+      userAdjustedDate = true;
       draft.date = els.refuelDate.value;
       saveAll();
       render();
@@ -1038,14 +1072,14 @@
     [
       "settingsToggle", "onlineState", "syncState", "queueState", "monthlyAverage",
       "monthlyLabel", "monthlyHeading", "todayResultValue", "lastResultValue",
-      "lastSheetRead", "fuelLpg", "fuelE98", "refuelDate", "dateButton",
+      "lastSheetRead", "fuelToggle", "fuelToggleImage", "refuelDate", "dateButton",
       "dateValue", "odometerButton", "odometerValue", "distanceValue",
       "priceButton", "pumpPriceValue", "discountButton", "discountValue",
       "paidPriceValue", "litersButton", "litersValue", "pumpTotalValue",
       "discountTotalValue", "paidTotalValue", "saveButton", "syncButton",
       "refreshButton", "settingsPanel", "endpointInput", "pinInput",
       "saveSettingsButton", "testSettingsButton", "queueList", "toast",
-      "inlineKeypad", "syncWorkingPanel", "syncWorkingText", "appVersionLabel"
+      "inlineKeypad", "inlineKeypadGrid", "syncWorkingPanel", "syncWorkingText", "appVersionLabel"
     ].forEach(function (id) {
       els[id] = $(id);
     });
@@ -1059,7 +1093,7 @@
 
   function init() {
     cacheElements();
-    if (!draft.date) draft.date = todayIso();
+    ensureDefaultDateForEmptyDraft();
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
     if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
     keypad.init({
@@ -1074,6 +1108,12 @@
     setActiveEdit("odometer");
     registerServiceWorker();
     window.setTimeout(maybeAutoRefreshConfig, 300);
+    window.setInterval(function () {
+      if (ensureDefaultDateForEmptyDraft()) {
+        storage.saveDraft(draft);
+        render();
+      }
+    }, 60000);
   }
 
   document.addEventListener("DOMContentLoaded", init);
