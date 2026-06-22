@@ -746,8 +746,8 @@ body.editing-discount footer {
 }
 
 .flota-footer {
-  height: 144px;
-  min-height: 144px;
+  height: 122px;
+  min-height: 122px;
   margin: 4px -10px -10px;
   display: flex;
   align-items: center;

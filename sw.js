@@ -1,13 +1,13 @@
-const CACHE_NAME = "tankowanie-v1.5.1";
+const CACHE_NAME = "tankowanie-v1.5.2";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=1.5.1",
-  "./storage.js?v=1.5.1",
-  "./keypad.js?v=1.5.1",
-  "./sync.js?v=1.5.1",
-  "./sounds.js?v=1.5.1",
-  "./app.js?v=1.5.1",
+  "./styles.css?v=1.5.2",
+  "./storage.js?v=1.5.2",
+  "./keypad.js?v=1.5.2",
+  "./sync.js?v=1.5.2",
+  "./sounds.js?v=1.5.2",
+  "./app.js?v=1.5.2",
   "./grafiki/LPG.png",
   "./grafiki/E98.png",
   "./grafiki/Orlen-flota.jpg",
