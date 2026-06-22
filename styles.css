@@ -688,11 +688,11 @@ h2 {
 }
 
 .inline-keypad-grid.fuel-lpg {
-  background: #ffffff;
+  background: #6b7280;
 }
 
 .inline-keypad-grid.fuel-e98 {
-  background: #009b4e;
+  background: var(--green);
 }
 
 .inline-keypad-grid button {
