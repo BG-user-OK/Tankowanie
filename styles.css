@@ -735,6 +735,25 @@ h2 {
   text-align: center;
 }
 
+.busy-receipt-prompt {
+  width: min(100%, 360px);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(250, 204, 21, 0.48);
+  border-radius: 8px;
+  background: #0d1117;
+}
+
+.busy-receipt-prompt strong {
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.busy-receipt-prompt .receipt-actions button {
+  min-height: 46px;
+}
+
 .sync-working-panel[hidden],
 .inline-keypad[hidden] {
   display: none;

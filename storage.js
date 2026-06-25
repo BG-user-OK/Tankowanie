@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v2.0.1";
+  const APP_VERSION = "v2.0.2";
   const API_VERSION = "TANKOWANIE_API_V2";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
@@ -9,6 +9,7 @@
     draft: `${PREFIX}_draft`,
     queue: `${PREFIX}_queue`,
     receiptScans: `${PREFIX}_receipt_scans`,
+    lastSummary: `${PREFIX}_last_summary`,
     hints: `${PREFIX}_hints`,
     results: `${PREFIX}_results`,
     deviceId: `${PREFIX}_device_id`
@@ -89,6 +90,14 @@
     saveJSON(KEYS.receiptScans, Array.isArray(scans) ? scans : []);
   }
 
+  function getLastSummary() {
+    return Object.assign({ active: false }, loadJSON(KEYS.lastSummary, {}));
+  }
+
+  function saveLastSummary(summary) {
+    saveJSON(KEYS.lastSummary, summary && typeof summary === "object" ? summary : { active: false });
+  }
+
   function getHints() {
     return Object.assign({
       discountPerLiter: 0.21,
@@ -132,6 +141,8 @@
     saveQueue,
     getReceiptScans,
     saveReceiptScans,
+    getLastSummary,
+    saveLastSummary,
     getHints,
     saveHints,
     getResults,

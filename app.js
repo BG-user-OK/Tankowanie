@@ -12,6 +12,7 @@
   let draft = storage.getDraft();
   let queue = storage.getQueue();
   let receiptScans = storage.getReceiptScans();
+  let lastSummary = normalizeLastSummary(storage.getLastSummary());
   let hints = normalizeHints(storage.getHints());
   let results = storage.getResults();
   let activeEdit = "odometer";
@@ -218,6 +219,69 @@
     return base;
   }
 
+  function normalizeLastSummary(value) {
+    const source = value && typeof value === "object" ? value : {};
+    const pumpPrice = parseDecimal(source.pumpPrice);
+    const discountPerLiter = parseDecimal(source.discountPerLiter);
+    const discountedPrice = parseDecimal(source.discountedPrice);
+    const pumpTotal = parseDecimal(source.pumpTotal);
+    const discountTotal = parseDecimal(source.discountTotal);
+    const paidTotal = parseDecimal(source.paidTotal);
+    return {
+      active: source.active === true,
+      entryId: String(source.entryId || ""),
+      fuel: String(source.fuel || ""),
+      refuelDate: normalizeDateIso(source.refuelDate) || "",
+      odometer: numberOrNull(source.odometer) || "",
+      liters: parseDecimal(source.liters) !== null ? Number(parseDecimal(source.liters).toFixed(2)) : "",
+      pumpPrice: pumpPrice !== null ? Number(pumpPrice.toFixed(2)) : "",
+      discountPerLiter: discountPerLiter !== null ? Number(discountPerLiter.toFixed(2)) : "",
+      discountedPrice: discountedPrice !== null ? Number(discountedPrice.toFixed(2)) : "",
+      previousOdometer: numberOrNull(source.previousOdometer) || "",
+      distance: numberOrNull(source.distance) || "",
+      pumpTotal: pumpTotal !== null ? Number(pumpTotal.toFixed(2)) : "",
+      discountTotal: discountTotal !== null ? Number(discountTotal.toFixed(2)) : "",
+      paidTotal: paidTotal !== null ? Number(paidTotal.toFixed(2)) : "",
+      createdAt: String(source.createdAt || "")
+    };
+  }
+
+  function retainedSummary() {
+    return lastSummary && lastSummary.active && isRefuelDraftEmpty() ? lastSummary : null;
+  }
+
+  function buildLastSummary(entry) {
+    const stats = entryConsumption(entry);
+    return normalizeLastSummary({
+      active: true,
+      entryId: entry.entryId,
+      fuel: entry.fuel,
+      refuelDate: entry.refuelDate,
+      odometer: entry.odometer,
+      liters: entry.liters,
+      pumpPrice: entry.pumpPrice,
+      discountPerLiter: entry.discountPerLiter,
+      discountedPrice: entry.discountedPrice,
+      previousOdometer: stats.previousOdometer,
+      distance: stats.distance,
+      pumpTotal: entry.liters * entry.pumpPrice,
+      discountTotal: entry.liters * entry.discountPerLiter,
+      paidTotal: entry.liters * entry.discountedPrice,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  function setLastSummary(summary) {
+    lastSummary = normalizeLastSummary(summary);
+    storage.saveLastSummary(lastSummary);
+  }
+
+  function clearLastSummary() {
+    if (!retainedSummary()) return;
+    lastSummary = { active: false };
+    storage.saveLastSummary(lastSummary);
+  }
+
   function activeFuelHints() {
     return hints.fuels[draft.fuel] || {};
   }
@@ -250,10 +314,14 @@
   }
 
   function visiblePumpPrice() {
+    const summary = retainedSummary();
+    if (summary && summary.pumpPrice) return summary.pumpPrice;
     return draft.pumpPrice || pumpPriceHintValue();
   }
 
   function effectiveDiscount() {
+    const summary = retainedSummary();
+    if (summary && summary.discountPerLiter !== "") return Number(summary.discountPerLiter);
     const edited = draft.discountPerLiterEdited ? parseDecimal(draft.discountPerLiter) : null;
     if (edited !== null && Number.isFinite(edited) && edited >= 0) return edited;
     const fromSheet = Number(hints.discountPerLiter);
@@ -261,6 +329,8 @@
   }
 
   function paidPrice() {
+    const summary = retainedSummary();
+    if (summary && summary.discountedPrice) return Number(summary.discountedPrice);
     const price = Number(visiblePumpPrice());
     const discount = effectiveDiscount();
     if (!Number.isFinite(price) || price <= 0) return null;
@@ -268,6 +338,14 @@
   }
 
   function totals() {
+    const summary = retainedSummary();
+    if (summary && summary.pumpTotal !== "" && summary.discountTotal !== "" && summary.paidTotal !== "") {
+      return {
+        pump: Number(summary.pumpTotal),
+        discount: Number(summary.discountTotal),
+        paid: Number(summary.paidTotal)
+      };
+    }
     const liters = parseDecimal(draft.liters);
     const price = Number(visiblePumpPrice());
     const discount = effectiveDiscount();
@@ -374,6 +452,7 @@
     storage.saveDraft(draft);
     storage.saveQueue(queue);
     storage.saveReceiptScans(receiptScans);
+    storage.saveLastSummary(lastSummary);
     storage.saveHints(hints);
     storage.saveResults(results);
   }
@@ -451,6 +530,26 @@
     return "Praca online...";
   }
 
+  function receiptPromptRecord() {
+    const record = findReceiptScan(receiptPromptEntryId);
+    if (!record) return null;
+    return record.status === "pending" || record.status === "ready" ? record : null;
+  }
+
+  function renderBusyReceiptPrompt() {
+    if (!els.busyReceiptPrompt) return;
+    const dialogVisible = els.receiptDialog && !els.receiptDialog.hidden;
+    const record = busyAction === "save" && !dialogVisible ? receiptPromptRecord() : null;
+    els.busyReceiptPrompt.hidden = !record;
+  }
+
+  function maybeContinueReceiptPromptAfterBusy() {
+    const record = receiptPromptRecord();
+    if (!record) return;
+    if (els.receiptDialog && !els.receiptDialog.hidden) return;
+    showReceiptDecision(record.entryId);
+  }
+
   function renderBusy() {
     const isBusy = !!busyAction;
     if (!els.inlineKeypad || !els.syncWorkingPanel) return;
@@ -467,11 +566,14 @@
       item.element.classList.toggle("action-busy", busyAction === item.action);
       item.element.disabled = isBusy;
     });
+    renderBusyReceiptPrompt();
   }
 
   function setBusy(action) {
+    const previousAction = busyAction;
     busyAction = action || "";
     renderBusy();
+    if (previousAction === "save" && !busyAction) maybeContinueReceiptPromptAfterBusy();
   }
 
   function fieldHtml(value, isStale) {
@@ -541,7 +643,8 @@
   }
 
   function renderDistance() {
-    const distance = distanceSinceLast();
+    const summary = retainedSummary();
+    const distance = distanceSinceLast() || (summary && summary.distance ? summary.distance : null);
     const box = els.distanceValue.closest(".distance-box");
     if (distance) {
       els.distanceValue.textContent = String(distance);
@@ -570,8 +673,9 @@
     const odometerActive = activeEdit === "odometer" && keypad.getMode() === "odometer";
     const priceActive = activeEdit === "price" && keypad.getMode() === "price";
     const litersActive = activeEdit === "liters" && keypad.getMode() === "liters";
+    const summary = retainedSummary();
     const odometerHint = odometerHintValue();
-    const priceHint = pumpPriceHintValue();
+    const priceHint = summary && summary.pumpPrice ? summary.pumpPrice : pumpPriceHintValue();
 
     els.odometerButton.classList.toggle("active-edit", odometerActive);
     els.priceButton.classList.toggle("active-edit", priceActive);
@@ -608,7 +712,7 @@
       els.pumpPriceValue.classList.toggle("stale", !!priceHint);
       els.pumpPriceValue.classList.toggle("empty", !priceHint);
     }
-    setValueState(els.priceButton, !!draft.pumpPrice);
+    setValueState(els.priceButton, !!draft.pumpPrice || !!(summary && summary.pumpPrice));
 
     if (litersActive) {
       els.litersValue.innerHTML = keypad.getDisplayHtml();
@@ -981,6 +1085,11 @@
     }
     if (els.receiptDecisionActions) els.receiptDecisionActions.hidden = false;
     if (els.receiptSourceActions) els.receiptSourceActions.hidden = true;
+    if (busyAction === "save") {
+      els.receiptDialog.hidden = true;
+      renderBusyReceiptPrompt();
+      return;
+    }
     els.receiptDialog.hidden = false;
   }
 
@@ -994,11 +1103,13 @@
     if (els.receiptDecisionActions) els.receiptDecisionActions.hidden = true;
     if (els.receiptSourceActions) els.receiptSourceActions.hidden = false;
     els.receiptDialog.hidden = false;
+    renderBusyReceiptPrompt();
   }
 
   function hideReceiptDialog() {
     receiptPromptEntryId = "";
     if (els.receiptDialog) els.receiptDialog.hidden = true;
+    renderBusyReceiptPrompt();
   }
 
   function chooseReceiptLater() {
@@ -1118,8 +1229,9 @@
   async function handleReceiptFileSelected(file) {
     const record = findReceiptScan(receiptPromptEntryId) || activeReceiptScan();
     if (!record || !file) return;
+    const ownsBusy = !busyAction;
     try {
-      setBusy("scan");
+      if (ownsBusy) setBusy("scan");
       const imageData = await compressReceiptImage(file);
       record.status = "ready";
       record.base64 = imageData.base64;
@@ -1132,16 +1244,16 @@
       saveAll();
       hideReceiptDialog();
       render();
-      if (record.row) {
+      if (record.row && busyAction !== "save") {
         await uploadReceiptScanRecord(record);
       } else {
-        toast("Skan zapisany lokalnie. Wyślij kolejkę po zatankowaniu.");
+        toast("Skan zapisany lokalnie. Czeka na wiersz tankowania.");
       }
     } catch (error) {
       toast(friendlySyncError(error) || "Nie udało się zapisać skanu.");
     } finally {
       clearReceiptFileInputs();
-      setBusy("");
+      if (ownsBusy) setBusy("");
     }
   }
 
@@ -1266,12 +1378,14 @@
     try {
       draft.date = els.refuelDate.value || todayIso();
       const entry = buildEntry();
+      const summary = buildLastSummary(entry);
       rememberEntryHints(entry);
+      setLastSummary(summary);
       const syncSettings = currentSettings({ persist: true });
       const missing = missingSettingsMessage(syncSettings);
+      if (entry.fuel === "LPG") registerReceiptCandidate(entry, null, false);
       if (missing || !navigator.onLine) {
         queue.push(entry);
-        if (entry.fuel === "LPG") registerReceiptCandidate(entry, null, false);
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
@@ -1282,27 +1396,27 @@
       let savedReceipt = null;
       try {
         setBusy("save");
+        if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
         await verifySyncReady(syncSettings);
         const receipt = await sync.submitEntry(syncSettings, entry);
         savedReceipt = receipt;
         applyReceipt(receipt);
+        if (entry.fuel === "LPG") registerReceiptCandidate(entry, savedReceipt, false);
+        await tryUploadReceiptScansForReceipt(receipt, syncSettings);
       } catch (syncError) {
         queue.push(entry);
-        if (entry.fuel === "LPG") registerReceiptCandidate(entry, null, false);
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
-        if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
         toast(`Wpis został w kolejce. ${friendlySyncError(syncError)}`);
         return;
       } finally {
         setBusy("");
       }
-      if (entry.fuel === "LPG") registerReceiptCandidate(entry, savedReceipt, false);
+      if (savedReceipt) await tryUploadReceiptScansForReceipt(savedReceipt, syncSettings);
       clearEntryDraft();
       saveAll();
       setActiveEdit("odometer");
-      if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
       toast("Wpis wysłany do arkusza.");
     } catch (error) {
       toast(error.message || "Nie udało się zapisać wpisu.");
@@ -1412,7 +1526,10 @@
     window.addEventListener("offline", updateOnlineState);
 
     els.inlineKeypad.addEventListener("click", function (event) {
-      if (event.target && event.target.closest && event.target.closest("[data-key]")) playSound("keypad");
+      const keyButton = event.target && event.target.closest ? event.target.closest("[data-key]") : null;
+      if (!keyButton) return;
+      playSound("keypad");
+      if (/^[0-9]$/.test(String(keyButton.dataset.key || ""))) clearLastSummary();
     }, true);
 
     els.fuelToggle.addEventListener("click", function () {
@@ -1491,10 +1608,22 @@
       playSound("other");
       showReceiptSource(receiptPromptEntryId);
     });
+    if (els.busyReceiptYesButton) {
+      els.busyReceiptYesButton.addEventListener("click", function () {
+        playSound("other");
+        showReceiptSource(receiptPromptEntryId);
+      });
+    }
     els.receiptLaterButton.addEventListener("click", function () {
       playSound("other");
       chooseReceiptLater();
     });
+    if (els.busyReceiptLaterButton) {
+      els.busyReceiptLaterButton.addEventListener("click", function () {
+        playSound("other");
+        chooseReceiptLater();
+      });
+    }
     els.receiptCameraButton.addEventListener("click", function () {
       playSound("other");
       startReceiptFileChoice("camera");
@@ -1581,6 +1710,7 @@
       "refreshButton", "settingsPanel", "endpointInput", "pinInput",
       "saveSettingsButton", "testSettingsButton", "queueList", "toast",
       "inlineKeypad", "inlineKeypadGrid", "syncWorkingPanel", "syncWorkingText",
+      "busyReceiptPrompt", "busyReceiptYesButton", "busyReceiptLaterButton",
       "appVersionLabel", "queuePanel", "receiptDialog", "receiptQuestionText",
       "receiptDecisionActions", "receiptSourceActions", "receiptYesButton",
       "receiptLaterButton", "receiptCameraButton", "receiptGalleryButton",
