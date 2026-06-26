@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v2.0.2";
+  const APP_VERSION = "v2.0.3";
   const API_VERSION = "TANKOWANIE_API_V2";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
@@ -9,6 +9,7 @@
     draft: `${PREFIX}_draft`,
     queue: `${PREFIX}_queue`,
     receiptScans: `${PREFIX}_receipt_scans`,
+    pendingScan: `${PREFIX}_pending_scan`,
     lastSummary: `${PREFIX}_last_summary`,
     hints: `${PREFIX}_hints`,
     results: `${PREFIX}_results`,
@@ -90,6 +91,14 @@
     saveJSON(KEYS.receiptScans, Array.isArray(scans) ? scans : []);
   }
 
+  function getPendingScan() {
+    return loadJSON(KEYS.pendingScan, null);
+  }
+
+  function savePendingScan(scan) {
+    saveJSON(KEYS.pendingScan, scan && typeof scan === "object" ? scan : null);
+  }
+
   function getLastSummary() {
     return Object.assign({ active: false }, loadJSON(KEYS.lastSummary, {}));
   }
@@ -141,6 +150,8 @@
     saveQueue,
     getReceiptScans,
     saveReceiptScans,
+    getPendingScan,
+    savePendingScan,
     getLastSummary,
     saveLastSummary,
     getHints,

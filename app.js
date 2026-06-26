@@ -11,10 +11,13 @@
   let settings = storage.getSettings();
   let draft = storage.getDraft();
   let queue = storage.getQueue();
-  let receiptScans = storage.getReceiptScans();
+  let pendingScan = null;
   let lastSummary = normalizeLastSummary(storage.getLastSummary());
   let hints = normalizeHints(storage.getHints());
   let results = storage.getResults();
+  const pageSessionId = storage.createId("session");
+  const pageStartedAt = Date.now();
+  let recentLpgReceiptContext = null;
   let activeEdit = "odometer";
   let keypadReady = false;
   let busyAction = "";
@@ -451,7 +454,8 @@
     storage.saveSettings(settings);
     storage.saveDraft(draft);
     storage.saveQueue(queue);
-    storage.saveReceiptScans(receiptScans);
+    storage.savePendingScan(pendingScan);
+    storage.saveReceiptScans(pendingScan ? [pendingScan] : []);
     storage.saveLastSummary(lastSummary);
     storage.saveHints(hints);
     storage.saveResults(results);
@@ -503,14 +507,14 @@
     if (message.includes("Network error")) {
       return "Brak połączenia z endpointem Apps Script.";
     }
-    if (message.includes("Missing LPG row for receipt scan")) {
-      return "Skan czeka lokalnie: brakuje wiersza LPG z arkusza.";
+    if (message.includes("Missing row for receipt scan") || message.includes("Missing LPG row for receipt scan")) {
+      return "Skan czeka lokalnie: brakuje wiersza tankowania z arkusza.";
     }
     if (message.includes("Receipt scan is too large")) {
       return "Skan jest za duży. Zrób zdjęcie z bliższa albo słabszą jakością.";
     }
     if (message.includes("Receipt row does not match")) {
-      return "Skan nie pasuje do wiersza LPG w arkuszu.";
+      return "Skan nie pasuje do wiersza tankowania w arkuszu.";
     }
     if (message.includes("Authorization") || message.includes("DriveApp") || message.includes("permission")) {
       return "Apps Script wymaga autoryzacji Google Drive. Uruchom authorizeDrive i wdróż skrypt ponownie.";
@@ -985,9 +989,10 @@
 
   function normalizeReceiptRecord(record) {
     const source = record && typeof record === "object" ? record : {};
+    const fuel = String(source.fuel || "LPG").toUpperCase();
     return {
       entryId: String(source.entryId || ""),
-      fuel: String(source.fuel || "LPG").toUpperCase(),
+      fuel: fuel === "E98" ? "E98" : "LPG",
       row: source.row ? Number(source.row) : "",
       refuelDate: normalizeDateIso(source.refuelDate || source.date) || "",
       odometer: source.odometer ? Number(source.odometer) : "",
@@ -998,64 +1003,113 @@
       base64: String(source.base64 || ""),
       fileUrl: String(source.fileUrl || ""),
       error: String(source.error || ""),
+      sessionId: String(source.sessionId || ""),
       createdAt: String(source.createdAt || new Date().toISOString()),
       updatedAt: String(source.updatedAt || new Date().toISOString())
     };
   }
 
-  function compactReceiptScans(scans) {
-    const active = [];
-    const inactive = [];
-    (Array.isArray(scans) ? scans : []).forEach(function (item) {
+  function isActiveReceiptStatus(status) {
+    return status === "pending" || status === "ready";
+  }
+
+  function receiptTimestamp(record) {
+    if (record && Number.isFinite(Number(record.createdAt))) return Number(record.createdAt);
+    const updated = Date.parse(record && record.updatedAt ? record.updatedAt : "");
+    if (Number.isFinite(updated)) return updated;
+    const created = Date.parse(record && record.createdAt ? record.createdAt : "");
+    return Number.isFinite(created) ? created : 0;
+  }
+
+  function newestLegacyReceiptScan(records) {
+    let latest = null;
+    (Array.isArray(records) ? records : []).forEach(function (item, index) {
       const record = normalizeReceiptRecord(item);
-      if (!record.entryId || record.fuel !== "LPG") return;
-      if (record.status === "pending" || record.status === "ready") active.push(record);
-      else inactive.push(record);
+      if (!record.entryId) return;
+      const rank = receiptTimestamp(record) || index;
+      if (!latest || rank >= latest.rank) latest = { record, rank };
     });
-    return active.concat(inactive.slice(-16));
+    return latest ? latest.record : null;
+  }
+
+  function migratePendingScan(current, legacyRecords) {
+    const normalizedCurrent = normalizeReceiptRecord(current);
+    if (current && typeof current === "object" && normalizedCurrent.entryId) {
+      return isActiveReceiptStatus(normalizedCurrent.status) ? normalizedCurrent : null;
+    }
+    const latestLegacy = newestLegacyReceiptScan(legacyRecords);
+    if (latestLegacy && isActiveReceiptStatus(latestLegacy.status)) return latestLegacy;
+    return null;
   }
 
   function findReceiptScan(entryId) {
     const id = String(entryId || "");
     if (!id) return null;
-    for (let index = 0; index < receiptScans.length; index += 1) {
-      if (receiptScans[index] && receiptScans[index].entryId === id) return receiptScans[index];
-    }
-    return null;
+    return pendingScan && pendingScan.entryId === id ? pendingScan : null;
   }
 
   function upsertReceiptScan(record) {
     const normalized = normalizeReceiptRecord(record);
-    if (!normalized.entryId || normalized.fuel !== "LPG") return null;
-    const index = receiptScans.findIndex(function (item) {
-      return item && item.entryId === normalized.entryId;
-    });
-    if (index >= 0) receiptScans[index] = Object.assign({}, receiptScans[index], normalized);
-    else receiptScans.push(normalized);
-    receiptScans = compactReceiptScans(receiptScans);
-    return findReceiptScan(normalized.entryId);
+    if (!normalized.entryId || !isActiveReceiptStatus(normalized.status)) return null;
+    pendingScan = normalized;
+    return pendingScan;
+  }
+
+  function clearPendingScan(entryId) {
+    if (entryId && (!pendingScan || pendingScan.entryId !== entryId)) return;
+    pendingScan = null;
+    if (receiptPromptEntryId && (!entryId || receiptPromptEntryId === entryId)) receiptPromptEntryId = "";
   }
 
   function activeReceiptScan() {
-    for (let index = receiptScans.length - 1; index >= 0; index -= 1) {
-      const record = normalizeReceiptRecord(receiptScans[index]);
-      if (record.status === "ready" || record.status === "pending") return receiptScans[index];
-    }
-    return null;
+    return pendingScan && isActiveReceiptStatus(pendingScan.status) ? pendingScan : null;
+  }
+
+  function rememberLpgReceiptContext(entry) {
+    if (!entry || entry.fuel !== "LPG") return;
+    recentLpgReceiptContext = {
+      entryId: entry.entryId,
+      refuelDate: entry.refuelDate,
+      sessionId: pageSessionId,
+      createdAt: Date.now()
+    };
+  }
+
+  function isRecentLpgContextForEntry(context, entry) {
+    if (!context || !entry || entry.fuel !== "E98") return false;
+    if (context.sessionId !== pageSessionId) return false;
+    if (context.refuelDate && entry.refuelDate && context.refuelDate !== entry.refuelDate) return false;
+    const created = receiptTimestamp(context);
+    return created >= pageStartedAt - 10000 && Date.now() - created <= 2 * 60 * 60 * 1000;
+  }
+
+  function isCombinedE98WithCurrentLpg(entry) {
+    const record = activeReceiptScan();
+    if (record && record.fuel === "LPG" && isRecentLpgContextForEntry(record, entry)) return true;
+    return isRecentLpgContextForEntry(recentLpgReceiptContext, entry);
+  }
+
+  function shouldTrackReceiptForEntry(entry) {
+    if (!entry) return false;
+    if (entry.fuel === "LPG") return true;
+    if (entry.fuel === "E98") return !isCombinedE98WithCurrentLpg(entry);
+    return false;
   }
 
   function registerReceiptCandidate(entry, receipt, prompt) {
-    if (!entry || entry.fuel !== "LPG") return null;
+    if (!shouldTrackReceiptForEntry(entry)) return null;
     const existing = findReceiptScan(entry.entryId) || {};
     const record = upsertReceiptScan(Object.assign(existing, {
       entryId: entry.entryId,
-      fuel: "LPG",
+      fuel: entry.fuel,
       row: receipt && receipt.row ? Number(receipt.row) : existing.row || "",
       refuelDate: entry.refuelDate,
       odometer: entry.odometer,
       status: existing.status || "pending",
+      sessionId: existing.sessionId || pageSessionId,
       updatedAt: new Date().toISOString()
     }));
+    rememberLpgReceiptContext(entry);
     saveAll();
     render();
     if (prompt && record && (record.status === "pending" || record.status === "ready")) {
@@ -1065,9 +1119,10 @@
   }
 
   function updateReceiptRowFromReceipt(receipt) {
-    if (!receipt || receipt.fuel !== "LPG" || !receipt.entryId) return null;
+    if (!receipt || !receipt.entryId) return null;
     const record = findReceiptScan(receipt.entryId);
     if (!record) return null;
+    if (receipt.fuel && record.fuel !== receipt.fuel) return null;
     record.row = receipt.row ? Number(receipt.row) : record.row || "";
     record.updatedAt = new Date().toISOString();
     upsertReceiptScan(record);
@@ -1271,7 +1326,7 @@
       return null;
     }
     if (!currentRecord.row) {
-      toast("Skan czeka lokalnie: najpierw wyślij wpis LPG.");
+      toast("Skan czeka lokalnie: najpierw wyślij wpis tankowania.");
       return null;
     }
     if (!currentRecord.base64) {
@@ -1283,7 +1338,7 @@
     try {
       const receipt = await sync.uploadReceiptScan(syncSettings, {
         entryId: currentRecord.entryId,
-        fuel: "LPG",
+        fuel: currentRecord.fuel,
         row: currentRecord.row,
         refuelDate: currentRecord.refuelDate,
         odometer: currentRecord.odometer,
@@ -1291,12 +1346,7 @@
         mimeType: currentRecord.mimeType || "image/jpeg",
         base64: currentRecord.base64
       });
-      currentRecord.status = "uploaded";
-      currentRecord.fileUrl = receipt.fileUrl || currentRecord.fileUrl || "";
-      currentRecord.base64 = "";
-      currentRecord.error = "";
-      currentRecord.updatedAt = new Date().toISOString();
-      upsertReceiptScan(currentRecord);
+      clearPendingScan(currentRecord.entryId);
       saveAll();
       render();
       toast("Skan paragonu wysłany.");
@@ -1341,11 +1391,7 @@
   function abandonActiveReceiptScan() {
     const record = activeReceiptScan();
     if (!record) return;
-    record.status = "abandoned";
-    record.base64 = "";
-    record.error = "";
-    record.updatedAt = new Date().toISOString();
-    upsertReceiptScan(record);
+    clearPendingScan(record.entryId);
     saveAll();
     render();
     toast("Skan paragonu pominięty.");
@@ -1383,25 +1429,26 @@
       setLastSummary(summary);
       const syncSettings = currentSettings({ persist: true });
       const missing = missingSettingsMessage(syncSettings);
-      if (entry.fuel === "LPG") registerReceiptCandidate(entry, null, false);
+      const trackReceipt = shouldTrackReceiptForEntry(entry);
+      if (trackReceipt) registerReceiptCandidate(entry, null, false);
       if (missing || !navigator.onLine) {
         queue.push(entry);
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
-        if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
+        if (trackReceipt) showReceiptDecision(entry.entryId);
         toast(missing ? `Wpis w kolejce. ${missing}` : "Wpis zapisany w kolejce offline.");
         return;
       }
       let savedReceipt = null;
       try {
         setBusy("save");
-        if (entry.fuel === "LPG") showReceiptDecision(entry.entryId);
+        if (trackReceipt) showReceiptDecision(entry.entryId);
         await verifySyncReady(syncSettings);
         const receipt = await sync.submitEntry(syncSettings, entry);
         savedReceipt = receipt;
         applyReceipt(receipt);
-        if (entry.fuel === "LPG") registerReceiptCandidate(entry, savedReceipt, false);
+        if (trackReceipt) registerReceiptCandidate(entry, savedReceipt, false);
         await tryUploadReceiptScansForReceipt(receipt, syncSettings);
       } catch (syncError) {
         queue.push(entry);
@@ -1728,6 +1775,9 @@
 
   function init() {
     cacheElements();
+    pendingScan = migratePendingScan(storage.getPendingScan(), storage.getReceiptScans());
+    storage.savePendingScan(pendingScan);
+    storage.saveReceiptScans(pendingScan ? [pendingScan] : []);
     ensureDefaultDateForEmptyDraft();
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
     if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
