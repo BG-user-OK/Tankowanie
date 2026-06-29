@@ -12,9 +12,11 @@
   let draft = storage.getDraft();
   let queue = storage.getQueue();
   let pendingScan = null;
-  let lastSummary = normalizeLastSummary(storage.getLastSummary());
+  let lastSummary = normalizeLastSummaries(storage.getLastSummary());
   let hints = normalizeHints(storage.getHints());
   let results = storage.getResults();
+  let recentRefuel = normalizeRecentRefuel(storage.getRecentRefuel());
+  let entryUndoSnapshot = normalizeEntryUndoSnapshot(storage.getEntryUndoSnapshot());
   const pageSessionId = storage.createId("session");
   const pageStartedAt = Date.now();
   let recentLpgReceiptContext = null;
@@ -224,6 +226,7 @@
 
   function normalizeLastSummary(value) {
     const source = value && typeof value === "object" ? value : {};
+    const fuel = String(source.fuel || "").toUpperCase();
     const pumpPrice = parseDecimal(source.pumpPrice);
     const discountPerLiter = parseDecimal(source.discountPerLiter);
     const discountedPrice = parseDecimal(source.discountedPrice);
@@ -233,7 +236,7 @@
     return {
       active: source.active === true,
       entryId: String(source.entryId || ""),
-      fuel: String(source.fuel || ""),
+      fuel: fuel === "E98" ? "E98" : fuel === "LPG" ? "LPG" : "",
       refuelDate: normalizeDateIso(source.refuelDate) || "",
       odometer: numberOrNull(source.odometer) || "",
       liters: parseDecimal(source.liters) !== null ? Number(parseDecimal(source.liters).toFixed(2)) : "",
@@ -249,8 +252,53 @@
     };
   }
 
+  function emptyLastSummary(fuel) {
+    return normalizeLastSummary({ fuel, active: false });
+  }
+
+  function normalizeLastSummaries(value) {
+    const source = value && typeof value === "object" ? value : {};
+    const result = {
+      LPG: emptyLastSummary("LPG"),
+      E98: emptyLastSummary("E98")
+    };
+    if (source.LPG || source.E98) {
+      result.LPG = normalizeLastSummary(Object.assign({ fuel: "LPG" }, source.LPG || {}));
+      result.E98 = normalizeLastSummary(Object.assign({ fuel: "E98" }, source.E98 || {}));
+      return result;
+    }
+    const legacy = normalizeLastSummary(source);
+    if (legacy.active && (legacy.fuel === "LPG" || legacy.fuel === "E98")) {
+      result[legacy.fuel] = legacy;
+    }
+    return result;
+  }
+
+  function normalizeRecentRefuel(value) {
+    const source = value && typeof value === "object" ? value : {};
+    const fuel = String(source.fuel || "").toUpperCase();
+    const savedAt = Number(source.savedAt || 0);
+    return {
+      fuel: fuel === "E98" ? "E98" : fuel === "LPG" ? "LPG" : "",
+      entryId: String(source.entryId || ""),
+      odometer: numberOrNull(source.odometer) || "",
+      refuelDate: normalizeDateIso(source.refuelDate) || "",
+      savedAt: Number.isFinite(savedAt) && savedAt > 0 ? savedAt : 0
+    };
+  }
+
+  function normalizeEntryUndoSnapshot(value) {
+    const source = value && typeof value === "object" ? value : {};
+    return source.active === true ? source : null;
+  }
+
+  function cloneState(value) {
+    return JSON.parse(JSON.stringify(value === undefined ? null : value));
+  }
+
   function retainedSummary() {
-    return lastSummary && lastSummary.active && isRefuelDraftEmpty() ? lastSummary : null;
+    const summary = lastSummary && lastSummary[draft.fuel];
+    return summary && summary.active && isRefuelDraftEmpty() ? summary : null;
   }
 
   function buildLastSummary(entry) {
@@ -275,14 +323,66 @@
   }
 
   function setLastSummary(summary) {
-    lastSummary = normalizeLastSummary(summary);
+    const normalized = normalizeLastSummary(summary);
+    const fuel = normalized.fuel === "E98" ? "E98" : "LPG";
+    lastSummary = normalizeLastSummaries(lastSummary);
+    lastSummary[fuel] = Object.assign(normalized, { fuel });
     storage.saveLastSummary(lastSummary);
   }
 
   function clearLastSummary() {
     if (!retainedSummary()) return;
-    lastSummary = { active: false };
+    lastSummary = normalizeLastSummaries(lastSummary);
+    lastSummary[draft.fuel] = emptyLastSummary(draft.fuel);
     storage.saveLastSummary(lastSummary);
+  }
+
+  function hasCurrentEntryInput() {
+    return !!draft.odometer || !!draft.pumpPrice || !!parseDecimal(draft.liters);
+  }
+
+  function captureEntryUndoSnapshot(reason, force) {
+    if (!force && entryUndoSnapshot && entryUndoSnapshot.active && hasCurrentEntryInput()) return;
+    entryUndoSnapshot = {
+      active: true,
+      reason: String(reason || "entry"),
+      createdAt: new Date().toISOString(),
+      draft: cloneState(draft),
+      activeEdit,
+      lastSummary: cloneState(lastSummary),
+      pendingScan: cloneState(pendingScan),
+      hints: cloneState(hints),
+      results: cloneState(results),
+      recentRefuel: cloneState(recentRefuel),
+      recentLpgReceiptContext: cloneState(recentLpgReceiptContext),
+      userAdjustedDate
+    };
+    storage.saveEntryUndoSnapshot(entryUndoSnapshot);
+  }
+
+  function clearEntryUndoSnapshot() {
+    entryUndoSnapshot = null;
+    storage.saveEntryUndoSnapshot(null);
+  }
+
+  function restoreEntryUndoSnapshot() {
+    if (!entryUndoSnapshot || !entryUndoSnapshot.active) {
+      toast("Brak lokalnego stanu do cofnięcia.");
+      return;
+    }
+    draft = Object.assign(storage.getDraft(), cloneState(entryUndoSnapshot.draft) || {});
+    lastSummary = normalizeLastSummaries(cloneState(entryUndoSnapshot.lastSummary));
+    pendingScan = migratePendingScan(cloneState(entryUndoSnapshot.pendingScan), []);
+    hints = normalizeHints(cloneState(entryUndoSnapshot.hints));
+    results = Object.assign(storage.getResults(), cloneState(entryUndoSnapshot.results) || {});
+    recentRefuel = normalizeRecentRefuel(cloneState(entryUndoSnapshot.recentRefuel));
+    recentLpgReceiptContext = cloneState(entryUndoSnapshot.recentLpgReceiptContext) || null;
+    userAdjustedDate = !!entryUndoSnapshot.userAdjustedDate;
+    const restoredActiveEdit = entryUndoSnapshot.activeEdit || "odometer";
+    clearEntryUndoSnapshot();
+    saveAll();
+    setActiveEdit(restoredActiveEdit);
+    toast("Lokalnie cofnięto wpis testowy.");
   }
 
   function activeFuelHints() {
@@ -457,6 +557,8 @@
     storage.savePendingScan(pendingScan);
     storage.saveReceiptScans(pendingScan ? [pendingScan] : []);
     storage.saveLastSummary(lastSummary);
+    storage.saveRecentRefuel(recentRefuel);
+    storage.saveEntryUndoSnapshot(entryUndoSnapshot);
     storage.saveHints(hints);
     storage.saveResults(results);
   }
@@ -1065,6 +1167,41 @@
     return pendingScan && isActiveReceiptStatus(pendingScan.status) ? pendingScan : null;
   }
 
+  function rememberRecentRefuel(entry) {
+    if (!entry || (entry.fuel !== "LPG" && entry.fuel !== "E98")) return;
+    recentRefuel = normalizeRecentRefuel({
+      fuel: entry.fuel,
+      entryId: entry.entryId,
+      odometer: entry.odometer,
+      refuelDate: entry.refuelDate,
+      savedAt: Date.now()
+    });
+    storage.saveRecentRefuel(recentRefuel);
+  }
+
+  function isRecentOtherFuelRefuel(targetFuel) {
+    const context = normalizeRecentRefuel(recentRefuel);
+    if (!context.fuel || context.fuel === targetFuel) return false;
+    if (!context.odometer || !context.savedAt) return false;
+    return Date.now() - context.savedAt <= 60 * 60 * 1000;
+  }
+
+  function applyFastSecondFuel(targetFuel) {
+    if (!isRefuelDraftEmpty()) return false;
+    if (!isRecentOtherFuelRefuel(targetFuel)) return false;
+    captureEntryUndoSnapshot("fast-second-fuel", true);
+    draft.fuel = targetFuel;
+    draft.odometer = Number(recentRefuel.odometer);
+    draft.pumpPrice = null;
+    draft.discountPerLiter = null;
+    draft.discountPerLiterEdited = false;
+    draft.liters = "";
+    if (recentRefuel.refuelDate) draft.date = recentRefuel.refuelDate;
+    saveAll();
+    setActiveEdit("price", true);
+    return true;
+  }
+
   function rememberLpgReceiptContext(entry) {
     if (!entry || entry.fuel !== "LPG") return;
     recentLpgReceiptContext = {
@@ -1080,7 +1217,7 @@
     if (context.sessionId !== pageSessionId) return false;
     if (context.refuelDate && entry.refuelDate && context.refuelDate !== entry.refuelDate) return false;
     const created = receiptTimestamp(context);
-    return created >= pageStartedAt - 10000 && Date.now() - created <= 2 * 60 * 60 * 1000;
+    return created >= pageStartedAt - 10000 && Date.now() - created <= 60 * 60 * 1000;
   }
 
   function isCombinedE98WithCurrentLpg(entry) {
@@ -1461,6 +1598,7 @@
         setBusy("");
       }
       if (savedReceipt) await tryUploadReceiptScansForReceipt(savedReceipt, syncSettings);
+      rememberRecentRefuel(entry);
       clearEntryDraft();
       saveAll();
       setActiveEdit("odometer");
@@ -1562,6 +1700,14 @@
       return;
     }
     if (activeEdit === "price") {
+      if (!draft.pumpPrice) {
+        const suggestedPrice = pumpPriceHintValue();
+        if (suggestedPrice && Number.isFinite(Number(suggestedPrice)) && Number(suggestedPrice) > 0) {
+          captureEntryUndoSnapshot("accept-price");
+          draft.pumpPrice = Number(Number(suggestedPrice).toFixed(2));
+          saveAll();
+        }
+      }
       setActiveEdit("liters", true);
       return;
     }
@@ -1576,12 +1722,17 @@
       const keyButton = event.target && event.target.closest ? event.target.closest("[data-key]") : null;
       if (!keyButton) return;
       playSound("keypad");
-      if (/^[0-9]$/.test(String(keyButton.dataset.key || ""))) clearLastSummary();
+      if (/^[0-9]$/.test(String(keyButton.dataset.key || ""))) {
+        if (!hasCurrentEntryInput()) captureEntryUndoSnapshot("first-digit", true);
+        clearLastSummary();
+      }
     }, true);
 
     els.fuelToggle.addEventListener("click", function () {
       playSound("other");
-      draft.fuel = draft.fuel === "LPG" ? "E98" : "LPG";
+      const targetFuel = draft.fuel === "LPG" ? "E98" : "LPG";
+      if (applyFastSecondFuel(targetFuel)) return;
+      draft.fuel = targetFuel;
       saveAll();
       setActiveEdit("odometer");
     });
@@ -1786,7 +1937,8 @@
       onChange: applyKeypadValue,
       onCommit: applyKeypadValue,
       onOk: advanceEditField,
-      onClear: clearRefuelInputDraft
+      onClear: clearRefuelInputDraft,
+      onUndo: restoreEntryUndoSnapshot
     });
     keypadReady = true;
     bindEvents();

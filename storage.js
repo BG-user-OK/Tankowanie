@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v2.0.3";
+  const APP_VERSION = "v2.1.0";
   const API_VERSION = "TANKOWANIE_API_V2";
   const PREFIX = "tankowanie_v1";
   const KEYS = {
@@ -11,6 +11,8 @@
     receiptScans: `${PREFIX}_receipt_scans`,
     pendingScan: `${PREFIX}_pending_scan`,
     lastSummary: `${PREFIX}_last_summary`,
+    recentRefuel: `${PREFIX}_recent_refuel`,
+    entryUndoSnapshot: `${PREFIX}_entry_undo_snapshot`,
     hints: `${PREFIX}_hints`,
     results: `${PREFIX}_results`,
     deviceId: `${PREFIX}_device_id`
@@ -107,6 +109,22 @@
     saveJSON(KEYS.lastSummary, summary && typeof summary === "object" ? summary : { active: false });
   }
 
+  function getRecentRefuel() {
+    return loadJSON(KEYS.recentRefuel, null);
+  }
+
+  function saveRecentRefuel(refuel) {
+    saveJSON(KEYS.recentRefuel, refuel && typeof refuel === "object" ? refuel : null);
+  }
+
+  function getEntryUndoSnapshot() {
+    return loadJSON(KEYS.entryUndoSnapshot, null);
+  }
+
+  function saveEntryUndoSnapshot(snapshot) {
+    saveJSON(KEYS.entryUndoSnapshot, snapshot && typeof snapshot === "object" ? snapshot : null);
+  }
+
   function getHints() {
     return Object.assign({
       discountPerLiter: 0.21,
@@ -154,6 +172,10 @@
     savePendingScan,
     getLastSummary,
     saveLastSummary,
+    getRecentRefuel,
+    saveRecentRefuel,
+    getEntryUndoSnapshot,
+    saveEntryUndoSnapshot,
     getHints,
     saveHints,
     getResults,

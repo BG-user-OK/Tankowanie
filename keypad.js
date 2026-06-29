@@ -6,10 +6,12 @@
     onChange: function () {},
     onCommit: function () {},
     onOk: function () {},
-    onClear: function () {}
+    onClear: function () {},
+    onUndo: function () {}
   };
   let ui = {};
   let suppressBackClickUntil = 0;
+  let suppressOkClickUntil = 0;
 
   function escapeHtml(value) {
     return String(value)
@@ -201,12 +203,17 @@
       onChange: typeof options.onChange === "function" ? options.onChange : function () {},
       onCommit: typeof options.onCommit === "function" ? options.onCommit : function () {},
       onOk: typeof options.onOk === "function" ? options.onOk : function () {},
-      onClear: typeof options.onClear === "function" ? options.onClear : function () {}
+      onClear: typeof options.onClear === "function" ? options.onClear : function () {},
+      onUndo: typeof options.onUndo === "function" ? options.onUndo : function () {}
     };
     if (ui.root) {
       ui.root.querySelectorAll("[data-key]").forEach(function (button) {
         if (button.dataset.key === "back") {
           bindBackButton(button);
+          return;
+        }
+        if (button.dataset.key === "ok") {
+          bindOkButton(button);
           return;
         }
         button.addEventListener("click", function () {
@@ -313,6 +320,102 @@
       }
       pulsePressed();
       press("back");
+    });
+  }
+
+  function bindOkButton(button) {
+    let timer = 0;
+    let longPressDone = false;
+    let pointerActive = false;
+
+    function stopNativeHold(event) {
+      if (!event) return;
+      if (event.cancelable) event.preventDefault();
+      if (event.stopPropagation) event.stopPropagation();
+    }
+
+    function stopPendingClass() {
+      button.classList.remove("clear-pending");
+    }
+
+    function clearTimer() {
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = 0;
+      }
+    }
+
+    function pulsePressed() {
+      button.classList.add("pressed");
+      window.setTimeout(function () {
+        button.classList.remove("pressed");
+      }, 120);
+    }
+
+    function finishPointer(event) {
+      if (!pointerActive) return;
+      pointerActive = false;
+      stopNativeHold(event);
+      clearTimer();
+      stopPendingClass();
+      suppressOkClickUntil = Date.now() + 500;
+      if (!longPressDone) {
+        pulsePressed();
+        press("ok");
+      }
+      longPressDone = false;
+    }
+
+    button.setAttribute("draggable", "false");
+    button.addEventListener("contextmenu", stopNativeHold);
+    button.addEventListener("selectstart", stopNativeHold);
+    button.addEventListener("dragstart", stopNativeHold);
+
+    button.addEventListener("pointerdown", function (event) {
+      stopNativeHold(event);
+      pointerActive = true;
+      longPressDone = false;
+      clearTimer();
+      button.classList.add("clear-pending");
+      if (button.setPointerCapture && event.pointerId !== undefined) {
+        try {
+          button.setPointerCapture(event.pointerId);
+        } catch (error) {}
+      }
+      timer = window.setTimeout(function () {
+        timer = 0;
+        longPressDone = true;
+        suppressOkClickUntil = Date.now() + 700;
+        stopPendingClass();
+        pulsePressed();
+        callbacks.onUndo({ mode: active ? active.mode : "" });
+      }, 2000);
+    });
+
+    button.addEventListener("pointerup", finishPointer);
+    button.addEventListener("pointercancel", function (event) {
+      pointerActive = false;
+      clearTimer();
+      stopPendingClass();
+      longPressDone = false;
+      stopNativeHold(event);
+    });
+    button.addEventListener("pointerleave", function () {
+      if (!pointerActive) return;
+      pointerActive = false;
+      clearTimer();
+      stopPendingClass();
+      longPressDone = false;
+      suppressOkClickUntil = Date.now() + 300;
+    });
+    button.addEventListener("click", function (event) {
+      if (Date.now() < suppressOkClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      pulsePressed();
+      press("ok");
     });
   }
 
