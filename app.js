@@ -6,8 +6,45 @@
   const sync = window.TankowanieSync;
 
   const els = {};
-  const FUELS = ["LPG", "E98"];
+  const PROFILES = {
+    BG: {
+      id: "BG",
+      label: "BG",
+      switchLabel: "Clio3",
+      tileColor: "#2563eb",
+      fuels: ["LPG", "E98"],
+      defaultFuel: "LPG",
+      footerText: "",
+      receiptFilePrefix: "BG_ORLEN",
+      supportsFastSecondFuel: true,
+      showFuelImage: true,
+      staticFuelLabel: ""
+    },
+    HANIA_CLIO3: {
+      id: "HANIA_CLIO3",
+      label: "Hania",
+      switchLabel: "BG",
+      tileColor: "#db2777",
+      fuels: ["E95"],
+      defaultFuel: "E95",
+      footerText: "Clio3 - tankuje Hania",
+      receiptFilePrefix: "CLIO3_ORLEN",
+      supportsFastSecondFuel: false,
+      showFuelImage: false,
+      staticFuelLabel: "E95"
+    }
+  };
+  const USER_TILES = [
+    { id: "BG", label: "BG", active: true, color: "#2563eb" },
+    { id: "IWONA", label: "Iwona", active: false, color: "#7c3aed" },
+    { id: "HANIA_CLIO3", label: "Hania", active: true, color: "#db2777" },
+    { id: "MICHAL", label: "Michał", active: false, color: "#0891b2" },
+    { id: "MAJA", label: "Maja", active: false, color: "#ea580c" },
+    { id: "GOSIA", label: "Gosia", active: false, color: "#16a34a" },
+    { id: "GRZESIU", label: "Grzesiu", active: false, color: "#ca8a04" }
+  ];
   const ROMAN_MONTHS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+  let activeProfileId = storage.getActiveProfile();
   let settings = storage.getSettings();
   let draft = storage.getDraft();
   let queue = storage.getQueue();
@@ -35,6 +72,44 @@
 
   function $(id) {
     return document.getElementById(id);
+  }
+
+  function activeProfile() {
+    return PROFILES[activeProfileId] || PROFILES.BG;
+  }
+
+  function activeFuels() {
+    return activeProfile().fuels.slice();
+  }
+
+  function allKnownFuels() {
+    return Object.keys(PROFILES).reduce(function (fuels, profileId) {
+      PROFILES[profileId].fuels.forEach(function (fuel) {
+        if (fuels.indexOf(fuel) === -1) fuels.push(fuel);
+      });
+      return fuels;
+    }, []);
+  }
+
+  function normalizeFuelId(fuel, fallback) {
+    const normalized = String(fuel || "").trim().toUpperCase();
+    if (allKnownFuels().indexOf(normalized) !== -1) return normalized;
+    return fallback || activeProfile().defaultFuel;
+  }
+
+  function isFuelAvailable(fuel) {
+    return activeFuels().indexOf(String(fuel || "").toUpperCase()) !== -1;
+  }
+
+  function primaryFuel() {
+    return activeProfile().defaultFuel;
+  }
+
+  function nextFuel(currentFuel) {
+    const fuels = activeFuels();
+    if (fuels.length < 2) return currentFuel;
+    const index = fuels.indexOf(currentFuel);
+    return fuels[(index + 1 + fuels.length) % fuels.length];
   }
 
   function todayIso() {
@@ -219,14 +294,15 @@
       fuels: {}
     }, value || {});
     base.fuels = base.fuels || {};
-    base.fuels.LPG = normalizeFuelHint(base.fuels.LPG);
-    base.fuels.E98 = normalizeFuelHint(base.fuels.E98);
+    activeFuels().forEach(function (fuel) {
+      base.fuels[fuel] = normalizeFuelHint(base.fuels[fuel]);
+    });
     return base;
   }
 
   function normalizeLastSummary(value) {
     const source = value && typeof value === "object" ? value : {};
-    const fuel = String(source.fuel || "").toUpperCase();
+    const fuel = normalizeFuelId(source.fuel, "");
     const pumpPrice = parseDecimal(source.pumpPrice);
     const discountPerLiter = parseDecimal(source.discountPerLiter);
     const discountedPrice = parseDecimal(source.discountedPrice);
@@ -236,7 +312,7 @@
     return {
       active: source.active === true,
       entryId: String(source.entryId || ""),
-      fuel: fuel === "E98" ? "E98" : fuel === "LPG" ? "LPG" : "",
+      fuel,
       refuelDate: normalizeDateIso(source.refuelDate) || "",
       odometer: numberOrNull(source.odometer) || "",
       liters: parseDecimal(source.liters) !== null ? Number(parseDecimal(source.liters).toFixed(2)) : "",
@@ -258,17 +334,21 @@
 
   function normalizeLastSummaries(value) {
     const source = value && typeof value === "object" ? value : {};
-    const result = {
-      LPG: emptyLastSummary("LPG"),
-      E98: emptyLastSummary("E98")
-    };
-    if (source.LPG || source.E98) {
-      result.LPG = normalizeLastSummary(Object.assign({ fuel: "LPG" }, source.LPG || {}));
-      result.E98 = normalizeLastSummary(Object.assign({ fuel: "E98" }, source.E98 || {}));
+    const result = {};
+    activeFuels().forEach(function (fuel) {
+      result[fuel] = emptyLastSummary(fuel);
+    });
+    const hasFuelKeys = activeFuels().some(function (fuel) {
+      return !!source[fuel];
+    });
+    if (hasFuelKeys) {
+      activeFuels().forEach(function (fuel) {
+        result[fuel] = normalizeLastSummary(Object.assign({ fuel }, source[fuel] || {}));
+      });
       return result;
     }
     const legacy = normalizeLastSummary(source);
-    if (legacy.active && (legacy.fuel === "LPG" || legacy.fuel === "E98")) {
+    if (legacy.active && isFuelAvailable(legacy.fuel)) {
       result[legacy.fuel] = legacy;
     }
     return result;
@@ -276,10 +356,10 @@
 
   function normalizeRecentRefuel(value) {
     const source = value && typeof value === "object" ? value : {};
-    const fuel = String(source.fuel || "").toUpperCase();
+    const fuel = normalizeFuelId(source.fuel, "");
     const savedAt = Number(source.savedAt || 0);
     return {
-      fuel: fuel === "E98" ? "E98" : fuel === "LPG" ? "LPG" : "",
+      fuel,
       entryId: String(source.entryId || ""),
       odometer: numberOrNull(source.odometer) || "",
       refuelDate: normalizeDateIso(source.refuelDate) || "",
@@ -324,7 +404,7 @@
 
   function setLastSummary(summary) {
     const normalized = normalizeLastSummary(summary);
-    const fuel = normalized.fuel === "E98" ? "E98" : "LPG";
+    const fuel = isFuelAvailable(normalized.fuel) ? normalized.fuel : primaryFuel();
     lastSummary = normalizeLastSummaries(lastSummary);
     lastSummary[fuel] = Object.assign(normalized, { fuel });
     storage.saveLastSummary(lastSummary);
@@ -525,7 +605,7 @@
   }
 
   function hasMissingPreviousData() {
-    return FUELS.some(function (fuel) {
+    return activeFuels().some(function (fuel) {
       const fuelHint = hints.fuels[fuel] || {};
       return !previousOdometerForFuel(fuel) || !parseDecimal(fuelHint.lastConsumption);
     });
@@ -537,7 +617,8 @@
     const pinFromInput = els.pinInput ? els.pinInput.value.trim() : "";
     settings = {
       endpointUrl: endpointFromInput || stored.endpointUrl || "",
-      pin: pinFromInput || stored.pin || ""
+      pin: pinFromInput || stored.pin || "",
+      profileId: activeProfileId
     };
     if (options && options.persist) storage.saveSettings(settings);
     return settings;
@@ -561,6 +642,71 @@
     storage.saveEntryUndoSnapshot(entryUndoSnapshot);
     storage.saveHints(hints);
     storage.saveResults(results);
+  }
+
+  function reloadProfileState(profileId, options) {
+    if (options && options.saveCurrent) saveAll();
+    activeProfileId = storage.setActiveProfile(profileId);
+    settings = storage.getSettings();
+    draft = storage.getDraft();
+    queue = storage.getQueue();
+    pendingScan = migratePendingScan(storage.getPendingScan(), storage.getReceiptScans());
+    storage.savePendingScan(pendingScan);
+    storage.saveReceiptScans(pendingScan ? [pendingScan] : []);
+    lastSummary = normalizeLastSummaries(storage.getLastSummary());
+    hints = normalizeHints(storage.getHints());
+    results = storage.getResults();
+    recentRefuel = normalizeRecentRefuel(storage.getRecentRefuel());
+    entryUndoSnapshot = normalizeEntryUndoSnapshot(storage.getEntryUndoSnapshot());
+    recentLpgReceiptContext = null;
+    receiptPromptEntryId = "";
+    userAdjustedDate = false;
+    if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
+    if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
+    ensureDefaultDateForEmptyDraft();
+    if (els.receiptDialog) els.receiptDialog.hidden = true;
+    setActiveEdit("odometer");
+    maybeAutoRefreshConfig();
+  }
+
+  function renderProfileChooser() {
+    if (!els.profileTiles) return;
+    els.profileTiles.innerHTML = USER_TILES.map(function (tile) {
+      const activeClass = tile.active ? "is-active" : "is-disabled";
+      const state = tile.active ? "" : '<span class="profile-tile-state">później</span>';
+      return `
+        <button type="button" class="profile-tile ${activeClass}" data-profile-id="${tile.id}" style="--tile-color: ${tile.color}">
+          <strong>${tile.label}</strong>
+          ${state}
+        </button>
+      `;
+    }).join("");
+  }
+
+  function showProfileChooser() {
+    renderProfileChooser();
+    if (els.profileChooser) els.profileChooser.hidden = false;
+  }
+
+  function hideProfileChooser() {
+    if (els.profileChooser) els.profileChooser.hidden = true;
+  }
+
+  function chooseProfile(profileId) {
+    const tile = USER_TILES.find(function (item) {
+      return item.id === profileId;
+    });
+    if (!tile || !tile.active) {
+      toast("Ten profil będzie dostępny później.");
+      return;
+    }
+    reloadProfileState(profileId, { saveCurrent: true });
+    hideProfileChooser();
+    toast(`Profil: ${activeProfile().label}.`);
+  }
+
+  function switchProfileFromFooter() {
+    chooseProfile(activeProfileId === "BG" ? "HANIA_CLIO3" : "BG");
   }
 
   function mergeMeaningful(target, source) {
@@ -877,18 +1023,30 @@
   function render() {
     document.body.classList.toggle("editing-discount", activeEdit === "discount");
     if (ensureDefaultDateForEmptyDraft()) storage.saveDraft(draft);
+    const profile = activeProfile();
     if (els.fuelToggleImage) {
-      els.fuelToggleImage.src = fuelImagePath(draft.fuel);
-      els.fuelToggleImage.alt = draft.fuel;
+      els.fuelToggleImage.hidden = !profile.showFuelImage;
+      if (profile.showFuelImage) {
+        els.fuelToggleImage.src = fuelImagePath(draft.fuel);
+        els.fuelToggleImage.alt = draft.fuel;
+      }
+    }
+    if (els.fuelStaticLabel) {
+      els.fuelStaticLabel.hidden = profile.showFuelImage;
+      els.fuelStaticLabel.textContent = profile.staticFuelLabel || draft.fuel;
     }
     if (els.fuelToggle) {
+      els.fuelToggle.disabled = activeFuels().length < 2;
+      els.fuelToggle.classList.toggle("single-fuel", activeFuels().length < 2);
       els.fuelToggle.setAttribute("aria-label", `Wybór paliwa: ${draft.fuel}`);
       els.fuelToggle.title = draft.fuel;
     }
     if (els.inlineKeypadGrid) {
       els.inlineKeypadGrid.classList.toggle("fuel-lpg", draft.fuel === "LPG");
       els.inlineKeypadGrid.classList.toggle("fuel-e98", draft.fuel === "E98");
+      els.inlineKeypadGrid.classList.toggle("fuel-e95", draft.fuel === "E95");
     }
+    document.body.dataset.profile = activeProfileId.toLowerCase();
     document.body.dataset.fuel = draft.fuel.toLowerCase();
     els.refuelDate.value = draft.date || todayIso();
     if (els.dateValue) els.dateValue.textContent = formatShortDate(els.refuelDate.value);
@@ -901,6 +1059,16 @@
     els.endpointInput.value = settings.endpointUrl || "";
     els.pinInput.value = settings.pin || "";
     if (els.appVersionLabel) els.appVersionLabel.textContent = storage.APP_VERSION;
+    if (els.profileFooterText) {
+      els.profileFooterText.hidden = !profile.footerText;
+      els.profileFooterText.textContent = profile.footerText;
+    }
+    if (els.profileSwitchButton) {
+      els.profileSwitchButton.textContent = profile.switchLabel;
+      els.profileSwitchButton.style.backgroundColor = profile.id === "BG" ? PROFILES.HANIA_CLIO3.tileColor : PROFILES.BG.tileColor;
+      els.profileSwitchButton.title = profile.id === "BG" ? "Przełącz na Clio3" : "Przełącz na BG";
+      els.profileSwitchButton.setAttribute("aria-label", els.profileSwitchButton.title);
+    }
     els.syncState.textContent = results.lastSyncAt ? `sync ${results.lastSyncAt}` : "brak sync";
     els.queueState.textContent = `q: ${queue.length}`;
     renderQueue();
@@ -957,7 +1125,7 @@
       : previousDiscount !== null && previousDiscount >= 0 ? previousDiscount : 0.21;
     hints.latestOdometer = config.latestOdometer || hints.latestOdometer || null;
     const incomingFuels = config.fuels || {};
-    FUELS.forEach(function (fuel) {
+    activeFuels().forEach(function (fuel) {
       const existing = normalizeFuelHint(hints.fuels[fuel]);
       const incoming = normalizeFuelHint(incomingFuels[fuel]);
       const merged = mergeMeaningful(existing, incomingFuels[fuel]);
@@ -967,7 +1135,7 @@
     hints.fuels = normalizeHints({ fuels: hints.fuels }).fuels;
     results.monthlyLabel = config.monthlyLabel || results.monthlyLabel || "";
     results.monthlyAverage = config.monthlyAverage || results.monthlyAverage || "";
-    results.lastLpgResult = config.lastLpgResult || results.lastLpgResult || "";
+    results.lastLpgResult = config.lastResult || config.lastLpgResult || results.lastLpgResult || "";
     results.lastReadAt = new Date().toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
     results.sheetTitle = config.sheetTitle || results.sheetTitle || "";
     saveAll();
@@ -1034,6 +1202,7 @@
       refuelDate: date,
       createdAt: new Date().toISOString(),
       deviceId: storage.getDeviceId(),
+      profileId: activeProfileId,
       appVersion: storage.APP_VERSION
     };
   }
@@ -1091,10 +1260,11 @@
 
   function normalizeReceiptRecord(record) {
     const source = record && typeof record === "object" ? record : {};
-    const fuel = String(source.fuel || "LPG").toUpperCase();
+    const fuel = normalizeFuelId(source.fuel, primaryFuel());
     return {
       entryId: String(source.entryId || ""),
-      fuel: fuel === "E98" ? "E98" : "LPG",
+      profileId: String(source.profileId || activeProfileId),
+      fuel: isFuelAvailable(fuel) ? fuel : primaryFuel(),
       row: source.row ? Number(source.row) : "",
       refuelDate: normalizeDateIso(source.refuelDate || source.date) || "",
       odometer: source.odometer ? Number(source.odometer) : "",
@@ -1168,7 +1338,7 @@
   }
 
   function rememberRecentRefuel(entry) {
-    if (!entry || (entry.fuel !== "LPG" && entry.fuel !== "E98")) return;
+    if (!entry || !isFuelAvailable(entry.fuel)) return;
     recentRefuel = normalizeRecentRefuel({
       fuel: entry.fuel,
       entryId: entry.entryId,
@@ -1187,6 +1357,7 @@
   }
 
   function applyFastSecondFuel(targetFuel) {
+    if (!activeProfile().supportsFastSecondFuel) return false;
     if (!isRefuelDraftEmpty()) return false;
     if (!isRecentOtherFuelRefuel(targetFuel)) return false;
     captureEntryUndoSnapshot("fast-second-fuel", true);
@@ -1228,6 +1399,7 @@
 
   function shouldTrackReceiptForEntry(entry) {
     if (!entry) return false;
+    if (activeProfileId === "HANIA_CLIO3") return entry.fuel === "E95";
     if (entry.fuel === "LPG") return true;
     if (entry.fuel === "E98") return !isCombinedE98WithCurrentLpg(entry);
     return false;
@@ -1238,6 +1410,7 @@
     const existing = findReceiptScan(entry.entryId) || {};
     const record = upsertReceiptScan(Object.assign(existing, {
       entryId: entry.entryId,
+      profileId: activeProfileId,
       fuel: entry.fuel,
       row: receipt && receipt.row ? Number(receipt.row) : existing.row || "",
       refuelDate: entry.refuelDate,
@@ -1415,7 +1588,7 @@
   function receiptFileName(record) {
     const date = normalizeDateIso(record.refuelDate) || todayIso();
     const time = new Date().toTimeString().slice(0, 8).replace(/:/g, "-");
-    return `BG_ORLEN_${date}_${time}.jpg`;
+    return `${activeProfile().receiptFilePrefix}_${date}_${time}.jpg`;
   }
 
   async function handleReceiptFileSelected(file) {
@@ -1475,6 +1648,7 @@
     try {
       const receipt = await sync.uploadReceiptScan(syncSettings, {
         entryId: currentRecord.entryId,
+        profileId: currentRecord.profileId || activeProfileId,
         fuel: currentRecord.fuel,
         row: currentRecord.row,
         refuelDate: currentRecord.refuelDate,
@@ -1621,7 +1795,7 @@
         }
         hints.fuels[receipt.fuel].provisional = false;
       }
-      results.lastLpgResult = receipt.fuel === "LPG" && receipt.postResult ? receipt.postResult : results.lastLpgResult;
+      results.lastLpgResult = receipt.postResult ? receipt.postResult : results.lastLpgResult;
     }
     saveAll();
     configureKeypad();
@@ -1729,8 +1903,9 @@
     }, true);
 
     els.fuelToggle.addEventListener("click", function () {
+      if (activeFuels().length < 2) return;
       playSound("other");
-      const targetFuel = draft.fuel === "LPG" ? "E98" : "LPG";
+      const targetFuel = nextFuel(draft.fuel);
       if (applyFastSecondFuel(targetFuel)) return;
       draft.fuel = targetFuel;
       saveAll();
@@ -1894,13 +2069,30 @@
         toast(friendlySyncError(error) || "Test nieudany.");
       }
     });
+
+    if (els.profileTiles) {
+      els.profileTiles.addEventListener("click", function (event) {
+        const button = event.target && event.target.closest ? event.target.closest("[data-profile-id]") : null;
+        if (!button) return;
+        playSound("other");
+        chooseProfile(button.dataset.profileId);
+      });
+    }
+
+    if (els.profileSwitchButton) {
+      els.profileSwitchButton.addEventListener("click", function () {
+        playSound("other");
+        switchProfileFromFooter();
+      });
+    }
   }
 
   function cacheElements() {
     [
+      "profileChooser", "profileTiles", "profileSwitchButton", "profileFooterText",
       "settingsToggle", "onlineState", "syncState", "queueState", "monthlyAverage",
       "monthlyLabel", "monthlyHeading", "todayResultValue", "lastResultValue",
-      "lastSheetRead", "fuelToggle", "fuelToggleImage", "refuelDate", "dateButton",
+      "lastSheetRead", "fuelToggle", "fuelToggleImage", "fuelStaticLabel", "refuelDate", "dateButton",
       "dateValue", "odometerButton", "odometerValue", "distanceValue",
       "priceButton", "pumpPriceValue", "discountButton", "discountValue",
       "paidPriceValue", "litersButton", "litersValue", "pumpTotalValue",
@@ -1943,6 +2135,7 @@
     keypadReady = true;
     bindEvents();
     setActiveEdit("odometer");
+    showProfileChooser();
     registerServiceWorker();
     window.setTimeout(maybeAutoRefreshConfig, 300);
     window.setInterval(function () {

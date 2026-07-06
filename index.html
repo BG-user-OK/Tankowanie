@@ -6,10 +6,16 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=2.1.0">
+  <link rel="stylesheet" href="styles.css?v=3.0.0">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
+  <section id="profileChooser" class="profile-chooser" aria-label="Wybór profilu" hidden>
+    <div class="profile-chooser-inner">
+      <div id="profileTiles" class="profile-tiles"></div>
+    </div>
+  </section>
+
   <div class="app-shell">
     <main>
       <section class="top-row">
@@ -40,7 +46,8 @@
         </div>
 
         <button id="fuelToggle" class="fuel-switch fuel-toggle" type="button" aria-label="Wybór paliwa: LPG">
-          <img id="fuelToggleImage" src="grafiki/LPG.png?v=2.1.0" alt="LPG">
+          <img id="fuelToggleImage" src="grafiki/LPG.png?v=3.0.0" alt="LPG">
+          <span id="fuelStaticLabel" class="fuel-static-label" hidden>E95</span>
         </button>
       </section>
 
@@ -117,10 +124,12 @@
           <span id="queueState">q: 0</span>
         </div>
         <img src="grafiki/Orlen-flota.jpg" alt="Orlen Flota">
+        <div id="profileFooterText" class="profile-footer-text" hidden></div>
         <div class="flota-actions">
           <button id="syncButton" class="action-icon" type="button" aria-label="Synchronizuj" title="Synchronizuj">⇅</button>
           <button id="refreshButton" class="action-icon" type="button" aria-label="Pobierz dane" title="Pobierz dane z arkusza">☁↓</button>
           <button class="icon-button" id="settingsToggle" type="button" aria-label="Ustawienia synchronizacji">⚙</button>
+          <button class="profile-switch-button" id="profileSwitchButton" type="button" aria-label="Przełącz profil">Clio3</button>
         </div>
       </footer>
 
@@ -150,7 +159,7 @@
             <span>PIN</span>
             <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
           </label>
-          <span class="settings-version" id="appVersionLabel">v2.1.0</span>
+          <span class="settings-version" id="appVersionLabel">v3.0.0</span>
         </div>
 
         <div class="actions compact">
@@ -181,10 +190,10 @@
   <input id="receiptCameraInput" class="visually-hidden" type="file" accept="image/*" capture="environment">
   <input id="receiptGalleryInput" class="visually-hidden" type="file" accept="image/*">
 
-  <script src="storage.js?v=2.1.0"></script>
-  <script src="keypad.js?v=2.1.0"></script>
-  <script src="sync.js?v=2.1.0"></script>
-  <script src="sounds.js?v=2.1.0"></script>
-  <script src="app.js?v=2.1.0"></script>
+  <script src="storage.js?v=3.0.0"></script>
+  <script src="keypad.js?v=3.0.0"></script>
+  <script src="sync.js?v=3.0.0"></script>
+  <script src="sounds.js?v=3.0.0"></script>
+  <script src="app.js?v=3.0.0"></script>
 </body>
 </html>

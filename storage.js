@@ -1,11 +1,32 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v2.1.0";
-  const API_VERSION = "TANKOWANIE_API_V2";
+  const APP_VERSION = "v3.0.0";
+  const API_VERSION = "TANKOWANIE_API_V3";
   const PREFIX = "tankowanie_v1";
-  const KEYS = {
+  const PROFILE_BG = "BG";
+  const PROFILE_HANIA = "HANIA_CLIO3";
+  const PROFILE_IDS = [PROFILE_BG, PROFILE_HANIA];
+
+  const GLOBAL_KEYS = {
     settings: `${PREFIX}_settings`,
+    selectedProfile: `${PREFIX}_selected_profile`,
+    deviceId: `${PREFIX}_device_id`
+  };
+
+  const PROFILE_KEYS = {
+    draft: "draft",
+    queue: "queue",
+    receiptScans: "receipt_scans",
+    pendingScan: "pending_scan",
+    lastSummary: "last_summary",
+    recentRefuel: "recent_refuel",
+    entryUndoSnapshot: "entry_undo_snapshot",
+    hints: "hints",
+    results: "results"
+  };
+
+  const LEGACY_KEYS = {
     draft: `${PREFIX}_draft`,
     queue: `${PREFIX}_queue`,
     receiptScans: `${PREFIX}_receipt_scans`,
@@ -14,9 +35,38 @@
     recentRefuel: `${PREFIX}_recent_refuel`,
     entryUndoSnapshot: `${PREFIX}_entry_undo_snapshot`,
     hints: `${PREFIX}_hints`,
-    results: `${PREFIX}_results`,
-    deviceId: `${PREFIX}_device_id`
+    results: `${PREFIX}_results`
   };
+
+  function normalizeProfileId(profileId) {
+    const raw = String(profileId || "").trim().toUpperCase();
+    if (raw === PROFILE_HANIA || raw === "HANIA" || raw === "CLIO3" || raw === "HANIA_CLIO3") {
+      return PROFILE_HANIA;
+    }
+    return PROFILE_BG;
+  }
+
+  function activeFuelForProfile(profileId) {
+    return normalizeProfileId(profileId) === PROFILE_HANIA ? "E95" : "LPG";
+  }
+
+  function fuelsForProfile(profileId) {
+    return normalizeProfileId(profileId) === PROFILE_HANIA ? ["E95"] : ["LPG", "E98"];
+  }
+
+  function normalizeFuelForProfile(fuel, profileId) {
+    const normalized = String(fuel || "").trim().toUpperCase();
+    const fuels = fuelsForProfile(profileId);
+    return fuels.indexOf(normalized) !== -1 ? normalized : activeFuelForProfile(profileId);
+  }
+
+  function profilePrefix(profileId) {
+    return `${PREFIX}_profile_${normalizeProfileId(profileId)}`;
+  }
+
+  function profileKey(name, profileId) {
+    return `${profilePrefix(profileId || activeProfileId)}_${PROFILE_KEYS[name]}`;
+  }
 
   function loadJSON(key, fallback) {
     try {
@@ -31,6 +81,33 @@
     localStorage.setItem(key, JSON.stringify(value));
   }
 
+  function migrateLegacyBg() {
+    Object.keys(LEGACY_KEYS).forEach(function (name) {
+      const targetKey = profileKey(name, PROFILE_BG);
+      if (localStorage.getItem(targetKey) !== null) return;
+      const legacyValue = localStorage.getItem(LEGACY_KEYS[name]);
+      if (legacyValue !== null) localStorage.setItem(targetKey, legacyValue);
+    });
+  }
+
+  let activeProfileId = normalizeProfileId(localStorage.getItem(GLOBAL_KEYS.selectedProfile) || PROFILE_BG);
+  migrateLegacyBg();
+
+  function setActiveProfile(profileId) {
+    activeProfileId = normalizeProfileId(profileId);
+    localStorage.setItem(GLOBAL_KEYS.selectedProfile, activeProfileId);
+    if (activeProfileId === PROFILE_BG) migrateLegacyBg();
+    return activeProfileId;
+  }
+
+  function getActiveProfile() {
+    return activeProfileId;
+  }
+
+  function getProfiles() {
+    return PROFILE_IDS.slice();
+  }
+
   function createId(prefix) {
     const cryptoObj = window.crypto || {};
     if (typeof cryptoObj.randomUUID === "function") {
@@ -40,119 +117,171 @@
   }
 
   function getDeviceId() {
-    let id = localStorage.getItem(KEYS.deviceId);
+    let id = localStorage.getItem(GLOBAL_KEYS.deviceId);
     if (!id) {
       id = createId("device");
-      localStorage.setItem(KEYS.deviceId, id);
+      localStorage.setItem(GLOBAL_KEYS.deviceId, id);
     }
     return id;
   }
 
   function getSettings() {
-    return Object.assign({ endpointUrl: "", pin: "" }, loadJSON(KEYS.settings, {}));
+    return Object.assign({ endpointUrl: "", pin: "" }, loadJSON(GLOBAL_KEYS.settings, {}));
   }
 
   function saveSettings(settings) {
-    saveJSON(KEYS.settings, {
+    saveJSON(GLOBAL_KEYS.settings, {
       endpointUrl: String(settings.endpointUrl || "").trim(),
       pin: String(settings.pin || "").trim()
     });
   }
 
   function getDraft() {
-    return Object.assign({
-      fuel: "LPG",
+    const profileId = activeProfileId;
+    const draft = Object.assign({
+      fuel: activeFuelForProfile(profileId),
       odometer: null,
       pumpPrice: null,
       discountPerLiter: null,
       discountPerLiterEdited: false,
       liters: "",
       date: ""
-    }, loadJSON(KEYS.draft, {}));
+    }, loadJSON(profileKey("draft", profileId), {}));
+    draft.fuel = normalizeFuelForProfile(draft.fuel, profileId);
+    return draft;
   }
 
   function saveDraft(draft) {
-    saveJSON(KEYS.draft, draft);
+    const nextDraft = Object.assign({}, draft || {});
+    nextDraft.fuel = normalizeFuelForProfile(nextDraft.fuel, activeProfileId);
+    saveJSON(profileKey("draft"), nextDraft);
   }
 
   function getQueue() {
-    const queue = loadJSON(KEYS.queue, []);
+    const queue = loadJSON(profileKey("queue"), []);
     return Array.isArray(queue) ? queue : [];
   }
 
   function saveQueue(queue) {
-    saveJSON(KEYS.queue, Array.isArray(queue) ? queue : []);
+    saveJSON(profileKey("queue"), Array.isArray(queue) ? queue : []);
   }
 
   function getReceiptScans() {
-    const scans = loadJSON(KEYS.receiptScans, []);
+    const scans = loadJSON(profileKey("receiptScans"), []);
     return Array.isArray(scans) ? scans : [];
   }
 
   function saveReceiptScans(scans) {
-    saveJSON(KEYS.receiptScans, Array.isArray(scans) ? scans : []);
+    saveJSON(profileKey("receiptScans"), Array.isArray(scans) ? scans : []);
   }
 
   function getPendingScan() {
-    return loadJSON(KEYS.pendingScan, null);
+    return loadJSON(profileKey("pendingScan"), null);
   }
 
   function savePendingScan(scan) {
-    saveJSON(KEYS.pendingScan, scan && typeof scan === "object" ? scan : null);
+    saveJSON(profileKey("pendingScan"), scan && typeof scan === "object" ? scan : null);
   }
 
   function getLastSummary() {
-    return Object.assign({ active: false }, loadJSON(KEYS.lastSummary, {}));
+    return Object.assign({ active: false }, loadJSON(profileKey("lastSummary"), {}));
   }
 
   function saveLastSummary(summary) {
-    saveJSON(KEYS.lastSummary, summary && typeof summary === "object" ? summary : { active: false });
+    saveJSON(profileKey("lastSummary"), summary && typeof summary === "object" ? summary : { active: false });
   }
 
   function getRecentRefuel() {
-    return loadJSON(KEYS.recentRefuel, null);
+    return loadJSON(profileKey("recentRefuel"), null);
   }
 
   function saveRecentRefuel(refuel) {
-    saveJSON(KEYS.recentRefuel, refuel && typeof refuel === "object" ? refuel : null);
+    saveJSON(profileKey("recentRefuel"), refuel && typeof refuel === "object" ? refuel : null);
   }
 
   function getEntryUndoSnapshot() {
-    return loadJSON(KEYS.entryUndoSnapshot, null);
+    return loadJSON(profileKey("entryUndoSnapshot"), null);
   }
 
   function saveEntryUndoSnapshot(snapshot) {
-    saveJSON(KEYS.entryUndoSnapshot, snapshot && typeof snapshot === "object" ? snapshot : null);
+    saveJSON(profileKey("entryUndoSnapshot"), snapshot && typeof snapshot === "object" ? snapshot : null);
   }
 
-  function getHints() {
-    return Object.assign({
+  function emptyFuelHint() {
+    return {
+      suggestedPumpPrice: null,
+      lastPaidPrice: null,
+      lastOdometer: null,
+      lastLiters: null,
+      lastDate: "",
+      lastDateIso: "",
+      previousOdometer: null,
+      lastDistance: null,
+      lastConsumption: null,
+      history: []
+    };
+  }
+
+  function defaultHints() {
+    if (activeProfileId === PROFILE_HANIA) {
+      return {
+        discountPerLiter: 0.21,
+        latestOdometer: 162508,
+        fuels: {
+          E95: Object.assign(emptyFuelHint(), {
+            suggestedPumpPrice: 5.99,
+            lastPaidPrice: 5.78,
+            lastOdometer: 162508,
+            lastDate: "2026-06-19",
+            lastDateIso: "2026-06-19",
+            lastConsumption: 5.98,
+            history: [{
+              dateIso: "2026-06-19",
+              date: "2026-06-19",
+              odometer: 162508,
+              paidPrice: 5.78,
+              consumption: 5.98,
+              source: "initial"
+            }]
+          })
+        }
+      };
+    }
+    return {
       discountPerLiter: 0.21,
       latestOdometer: null,
       fuels: {
-        LPG: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", lastDateIso: "", previousOdometer: null, lastDistance: null, lastConsumption: null, history: [] },
-        E98: { suggestedPumpPrice: null, lastPaidPrice: null, lastOdometer: null, lastLiters: null, lastDate: "", lastDateIso: "", previousOdometer: null, lastDistance: null, lastConsumption: null, history: [] }
+        LPG: emptyFuelHint(),
+        E98: emptyFuelHint()
       }
-    }, loadJSON(KEYS.hints, {}));
+    };
+  }
+
+  function getHints() {
+    return Object.assign(defaultHints(), loadJSON(profileKey("hints"), {}));
   }
 
   function saveHints(hints) {
-    saveJSON(KEYS.hints, hints);
+    saveJSON(profileKey("hints"), hints);
   }
 
-  function getResults() {
-    return Object.assign({
+  function defaultResults() {
+    return {
       monthlyLabel: "",
-      monthlyAverage: "",
+      monthlyAverage: activeProfileId === PROFILE_HANIA ? "0" : "",
       lastLpgResult: "",
       lastReadAt: "",
       lastSyncAt: "",
       sheetTitle: ""
-    }, loadJSON(KEYS.results, {}));
+    };
+  }
+
+  function getResults() {
+    return Object.assign(defaultResults(), loadJSON(profileKey("results"), {}));
   }
 
   function saveResults(results) {
-    saveJSON(KEYS.results, results);
+    saveJSON(profileKey("results"), results);
   }
 
   window.TankowanieStorage = {
@@ -162,6 +291,9 @@
     getDeviceId,
     getSettings,
     saveSettings,
+    getActiveProfile,
+    setActiveProfile,
+    getProfiles,
     getDraft,
     saveDraft,
     getQueue,

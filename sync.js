@@ -58,7 +58,8 @@
   async function getConfig(settings) {
     const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
       action: "config",
-      pin: settings.pin
+      pin: settings.pin,
+      profileId: settings.profileId || "BG"
     }));
     if (!response || response.ok !== true) {
       throw new Error(response && response.error ? response.error : "Config failed.");
@@ -96,6 +97,7 @@
       const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
         action: "receipt",
         pin: settings.pin,
+        profileId: settings.profileId || "BG",
         requestId
       }));
       if (response && response.ok === true && response.found) {
@@ -117,6 +119,7 @@
       appVersion: appVersion(),
       apiVersion: apiVersion(),
       pin: settings.pin,
+      profileId: settings.profileId || "BG",
       requestId
     };
     body[payloadKey] = payload;

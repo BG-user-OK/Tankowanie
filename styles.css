@@ -59,6 +59,55 @@ button,
   padding: 8px 10px 10px;
 }
 
+.profile-chooser {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: start center;
+  overflow-y: auto;
+  background: #000000;
+  padding: calc(14px + env(safe-area-inset-top)) 0 calc(18px + env(safe-area-inset-bottom));
+}
+
+.profile-chooser-inner {
+  width: min(100vw, 520px);
+  padding: 0 8px;
+}
+
+.profile-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.profile-tile {
+  aspect-ratio: 1;
+  width: 100%;
+  min-height: auto;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--tile-color);
+  color: #ffffff;
+  font-size: clamp(24px, 10vw, 44px);
+  font-weight: 950;
+  text-align: center;
+}
+
+.profile-tile.is-disabled {
+  filter: grayscale(0.75) brightness(0.48);
+  opacity: 0.78;
+}
+
+.profile-tile-state {
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .top-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 98px;
@@ -182,6 +231,26 @@ footer,
   width: 100%;
   height: 102px;
   object-fit: contain;
+}
+
+.fuel-toggle.single-fuel {
+  border-color: var(--line);
+  background: #050505;
+}
+
+.fuel-toggle:disabled {
+  opacity: 1;
+}
+
+.fuel-static-label {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 102px;
+  color: var(--yellow);
+  font-size: 34px;
+  font-weight: 950;
+  letter-spacing: 0;
 }
 
 .entry-panel,
@@ -663,7 +732,7 @@ h2 {
   color: #111827;
   box-shadow: var(--shadow);
   font-weight: 800;
-  z-index: 30;
+  z-index: 100;
 }
 
 .receipt-dialog {
@@ -818,6 +887,10 @@ h2 {
   background: var(--green);
 }
 
+.inline-keypad-grid.fuel-e95 {
+  background: #db2777;
+}
+
 .inline-keypad-grid button {
   position: relative;
   z-index: 1;
@@ -877,6 +950,23 @@ body.editing-discount footer {
   object-fit: contain;
 }
 
+.profile-footer-text {
+  position: absolute;
+  left: 88px;
+  right: 58px;
+  bottom: 8px;
+  z-index: 1;
+  min-height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--yellow);
+  font-size: 13px;
+  font-weight: 950;
+  text-align: center;
+}
+
 .flota-status {
   position: absolute;
   left: 8px;
@@ -917,12 +1007,20 @@ body.editing-discount footer {
 
 .flota-actions button {
   width: 42px;
-  min-height: 34px;
+  min-height: 25px;
   padding: 3px;
-  font-size: 17px;
+  font-size: 15px;
   background: rgba(0, 0, 0, 0.7);
   border-color: rgba(255, 255, 255, 0.22);
   color: var(--ink);
+}
+
+.flota-actions .profile-switch-button {
+  width: 48px;
+  min-height: 27px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 950;
 }
 
 @media (max-width: 390px) {
