@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v3.0.0";
+  const APP_VERSION = "v3.0.1";
   const API_VERSION = "TANKOWANIE_API_V3";
   const PREFIX = "tankowanie_v1";
   const PROFILE_BG = "BG";
@@ -10,6 +10,8 @@
 
   const GLOBAL_KEYS = {
     settings: `${PREFIX}_settings`,
+    selectedUser: `${PREFIX}_selected_user`,
+    selectedVehicle: `${PREFIX}_selected_vehicle`,
     selectedProfile: `${PREFIX}_selected_profile`,
     deviceId: `${PREFIX}_device_id`
   };
@@ -44,6 +46,27 @@
       return PROFILE_HANIA;
     }
     return PROFILE_BG;
+  }
+
+  function normalizeUserId(userId) {
+    const raw = String(userId || "").trim().toUpperCase();
+    if (raw === "HANIA" || raw === "MICHAŁ" || raw === "MICHAL" || raw === "MAJA") return raw === "MICHAL" ? "MICHAŁ" : raw;
+    if (raw === "IWONA" || raw === "GOSIA" || raw === "GRZESIU") return raw;
+    return "BG";
+  }
+
+  function vehiclesForUser(userId) {
+    const user = normalizeUserId(userId);
+    if (user === "HANIA" || user === "MICHAŁ" || user === "MAJA") return [PROFILE_HANIA];
+    if (user === "BG") return PROFILE_IDS.slice();
+    return [];
+  }
+
+  function normalizeVehicleForUser(vehicleId, userId) {
+    const allowed = vehiclesForUser(userId);
+    const vehicle = normalizeProfileId(vehicleId);
+    if (allowed.indexOf(vehicle) !== -1) return vehicle;
+    return allowed[0] || PROFILE_BG;
   }
 
   function activeFuelForProfile(profileId) {
@@ -90,11 +113,36 @@
     });
   }
 
-  let activeProfileId = normalizeProfileId(localStorage.getItem(GLOBAL_KEYS.selectedProfile) || PROFILE_BG);
+  let activeUserId = normalizeUserId(localStorage.getItem(GLOBAL_KEYS.selectedUser) || "");
+  let activeProfileId = normalizeVehicleForUser(
+    localStorage.getItem(GLOBAL_KEYS.selectedVehicle) || localStorage.getItem(GLOBAL_KEYS.selectedProfile) || PROFILE_BG,
+    activeUserId
+  );
+  localStorage.setItem(GLOBAL_KEYS.selectedUser, activeUserId);
+  localStorage.setItem(GLOBAL_KEYS.selectedVehicle, activeProfileId);
+  localStorage.setItem(GLOBAL_KEYS.selectedProfile, activeProfileId);
   migrateLegacyBg();
 
+  function setActiveUser(userId) {
+    activeUserId = normalizeUserId(userId);
+    activeProfileId = normalizeVehicleForUser(activeProfileId, activeUserId);
+    localStorage.setItem(GLOBAL_KEYS.selectedUser, activeUserId);
+    localStorage.setItem(GLOBAL_KEYS.selectedVehicle, activeProfileId);
+    localStorage.setItem(GLOBAL_KEYS.selectedProfile, activeProfileId);
+    return activeUserId;
+  }
+
+  function getActiveUser() {
+    return activeUserId;
+  }
+
+  function getVehiclesForUser(userId) {
+    return vehiclesForUser(userId || activeUserId);
+  }
+
   function setActiveProfile(profileId) {
-    activeProfileId = normalizeProfileId(profileId);
+    activeProfileId = normalizeVehicleForUser(profileId, activeUserId);
+    localStorage.setItem(GLOBAL_KEYS.selectedVehicle, activeProfileId);
     localStorage.setItem(GLOBAL_KEYS.selectedProfile, activeProfileId);
     if (activeProfileId === PROFILE_BG) migrateLegacyBg();
     return activeProfileId;
@@ -291,6 +339,9 @@
     getDeviceId,
     getSettings,
     saveSettings,
+    getActiveUser,
+    setActiveUser,
+    getVehiclesForUser,
     getActiveProfile,
     setActiveProfile,
     getProfiles,

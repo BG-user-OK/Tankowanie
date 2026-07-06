@@ -10,7 +10,7 @@
     BG: {
       id: "BG",
       label: "BG",
-      switchLabel: "Clio3",
+      switchLabel: "Auto",
       tileColor: "#2563eb",
       fuels: ["LPG", "E98"],
       defaultFuel: "LPG",
@@ -22,12 +22,12 @@
     },
     HANIA_CLIO3: {
       id: "HANIA_CLIO3",
-      label: "Hania",
-      switchLabel: "BG",
+      label: "Clio3",
+      switchLabel: "Auto",
       tileColor: "#db2777",
       fuels: ["E95"],
       defaultFuel: "E95",
-      footerText: "Clio3 - tankuje Hania",
+      footerText: "Clio3",
       receiptFilePrefix: "CLIO3_ORLEN",
       supportsFastSecondFuel: false,
       showFuelImage: false,
@@ -37,13 +37,16 @@
   const USER_TILES = [
     { id: "BG", label: "BG", active: true, color: "#2563eb" },
     { id: "IWONA", label: "Iwona", active: false, color: "#7c3aed" },
-    { id: "HANIA_CLIO3", label: "Hania", active: true, color: "#db2777" },
-    { id: "MICHAL", label: "Michał", active: false, color: "#0891b2" },
-    { id: "MAJA", label: "Maja", active: false, color: "#ea580c" },
+    { id: "HANIA", label: "Hania", active: true, color: "#db2777" },
+    { id: "MICHAL", label: "Michał", active: true, color: "#0891b2" },
+    { id: "MAJA", label: "Maja", active: true, color: "#ea580c" },
     { id: "GOSIA", label: "Gosia", active: false, color: "#16a34a" },
     { id: "GRZESIU", label: "Grzesiu", active: false, color: "#ca8a04" }
   ];
+  let chooserMode = "user";
+  let chooserUserId = "";
   const ROMAN_MONTHS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+  let activeUserId = storage.getActiveUser();
   let activeProfileId = storage.getActiveProfile();
   let settings = storage.getSettings();
   let draft = storage.getDraft();
@@ -76,6 +79,21 @@
 
   function activeProfile() {
     return PROFILES[activeProfileId] || PROFILES.BG;
+  }
+
+  function userTile(userId) {
+    return USER_TILES.find(function (tile) {
+      return tile.id === userId || (tile.id === "MICHAL" && userId === "MICHAŁ");
+    }) || USER_TILES[0];
+  }
+
+  function activeUserLabel() {
+    return userTile(activeUserId).label;
+  }
+
+  function vehiclesForUser(userId) {
+    const fromStorage = storage.getVehiclesForUser(userId);
+    return Array.isArray(fromStorage) ? fromStorage : ["BG"];
   }
 
   function activeFuels() {
@@ -618,7 +636,9 @@
     settings = {
       endpointUrl: endpointFromInput || stored.endpointUrl || "",
       pin: pinFromInput || stored.pin || "",
-      profileId: activeProfileId
+      profileId: activeProfileId,
+      vehicleId: activeProfileId,
+      userId: activeUserId
     };
     if (options && options.persist) storage.saveSettings(settings);
     return settings;
@@ -646,6 +666,8 @@
 
   function reloadProfileState(profileId, options) {
     if (options && options.saveCurrent) saveAll();
+    if (options && options.userId) activeUserId = storage.setActiveUser(options.userId);
+    else activeUserId = storage.getActiveUser();
     activeProfileId = storage.setActiveProfile(profileId);
     settings = storage.getSettings();
     draft = storage.getDraft();
@@ -671,11 +693,26 @@
 
   function renderProfileChooser() {
     if (!els.profileTiles) return;
-    els.profileTiles.innerHTML = USER_TILES.map(function (tile) {
+    const tiles = chooserMode === "vehicle"
+      ? vehiclesForUser(chooserUserId).map(function (vehicleId) {
+        const vehicle = PROFILES[vehicleId] || PROFILES.BG;
+        return {
+          id: vehicleId,
+          label: vehicle.label,
+          active: true,
+          color: vehicle.tileColor,
+          kind: "vehicle"
+        };
+      })
+      : USER_TILES.map(function (tile) {
+        return Object.assign({ kind: "user" }, tile);
+      });
+    els.profileTiles.innerHTML = tiles.map(function (tile) {
       const activeClass = tile.active ? "is-active" : "is-disabled";
       const state = tile.active ? "" : '<span class="profile-tile-state">później</span>';
+      const attr = tile.kind === "vehicle" ? "data-vehicle-id" : "data-user-id";
       return `
-        <button type="button" class="profile-tile ${activeClass}" data-profile-id="${tile.id}" style="--tile-color: ${tile.color}">
+        <button type="button" class="profile-tile ${activeClass}" ${attr}="${tile.id}" style="--tile-color: ${tile.color}">
           <strong>${tile.label}</strong>
           ${state}
         </button>
@@ -684,6 +721,8 @@
   }
 
   function showProfileChooser() {
+    chooserMode = "user";
+    chooserUserId = "";
     renderProfileChooser();
     if (els.profileChooser) els.profileChooser.hidden = false;
   }
@@ -692,21 +731,32 @@
     if (els.profileChooser) els.profileChooser.hidden = true;
   }
 
-  function chooseProfile(profileId) {
+  function chooseUser(userId) {
     const tile = USER_TILES.find(function (item) {
-      return item.id === profileId;
+      return item.id === userId;
     });
     if (!tile || !tile.active) {
       toast("Ten profil będzie dostępny później.");
       return;
     }
-    reloadProfileState(profileId, { saveCurrent: true });
+    const vehicles = vehiclesForUser(userId);
+    if (vehicles.length > 1) {
+      chooserMode = "vehicle";
+      chooserUserId = userId;
+      renderProfileChooser();
+      return;
+    }
+    chooseVehicle(userId, vehicles[0] || "BG");
+  }
+
+  function chooseVehicle(userId, vehicleId) {
+    reloadProfileState(vehicleId, { saveCurrent: true, userId });
     hideProfileChooser();
-    toast(`Profil: ${activeProfile().label}.`);
+    toast(`${activeUserLabel()}: ${activeProfile().label}.`);
   }
 
   function switchProfileFromFooter() {
-    chooseProfile(activeProfileId === "BG" ? "HANIA_CLIO3" : "BG");
+    showProfileChooser();
   }
 
   function mergeMeaningful(target, source) {
@@ -1060,13 +1110,14 @@
     els.pinInput.value = settings.pin || "";
     if (els.appVersionLabel) els.appVersionLabel.textContent = storage.APP_VERSION;
     if (els.profileFooterText) {
-      els.profileFooterText.hidden = !profile.footerText;
-      els.profileFooterText.textContent = profile.footerText;
+      const footerText = activeProfileId === "BG" ? "" : `${profile.label} - tankuje ${activeUserLabel()}`;
+      els.profileFooterText.hidden = !footerText;
+      els.profileFooterText.textContent = footerText;
     }
     if (els.profileSwitchButton) {
-      els.profileSwitchButton.textContent = profile.switchLabel;
-      els.profileSwitchButton.style.backgroundColor = profile.id === "BG" ? PROFILES.HANIA_CLIO3.tileColor : PROFILES.BG.tileColor;
-      els.profileSwitchButton.title = profile.id === "BG" ? "Przełącz na Clio3" : "Przełącz na BG";
+      els.profileSwitchButton.textContent = "Wybór";
+      els.profileSwitchButton.style.backgroundColor = userTile(activeUserId).color || profile.tileColor;
+      els.profileSwitchButton.title = "Wybierz użytkownika i auto";
       els.profileSwitchButton.setAttribute("aria-label", els.profileSwitchButton.title);
     }
     els.syncState.textContent = results.lastSyncAt ? `sync ${results.lastSyncAt}` : "brak sync";
@@ -1104,6 +1155,11 @@
     els.refreshButton.title = "Pobierz dane z arkusza";
     els.refreshButton.setAttribute("aria-label", "Pobierz dane");
     els.saveButton.classList.toggle("scan-pending", active);
+    if (queue.length && isRefuelDraftEmpty()) {
+      els.saveButton.title = active ? "Wyślij kolejkę i skan" : "Wyślij kolejkę";
+      els.saveButton.setAttribute("aria-label", els.saveButton.title);
+      return;
+    }
     if (active) {
       els.saveButton.title = !isRefuelDraftEmpty()
         ? "Wyślij wpis; skan czeka"
@@ -1203,6 +1259,8 @@
       createdAt: new Date().toISOString(),
       deviceId: storage.getDeviceId(),
       profileId: activeProfileId,
+      vehicleId: activeProfileId,
+      userId: activeUserId,
       appVersion: storage.APP_VERSION
     };
   }
@@ -1264,6 +1322,8 @@
     return {
       entryId: String(source.entryId || ""),
       profileId: String(source.profileId || activeProfileId),
+      vehicleId: String(source.vehicleId || source.profileId || activeProfileId),
+      userId: String(source.userId || activeUserId),
       fuel: isFuelAvailable(fuel) ? fuel : primaryFuel(),
       row: source.row ? Number(source.row) : "",
       refuelDate: normalizeDateIso(source.refuelDate || source.date) || "",
@@ -1411,6 +1471,8 @@
     const record = upsertReceiptScan(Object.assign(existing, {
       entryId: entry.entryId,
       profileId: activeProfileId,
+      vehicleId: activeProfileId,
+      userId: activeUserId,
       fuel: entry.fuel,
       row: receipt && receipt.row ? Number(receipt.row) : existing.row || "",
       refuelDate: entry.refuelDate,
@@ -1649,6 +1711,8 @@
       const receipt = await sync.uploadReceiptScan(syncSettings, {
         entryId: currentRecord.entryId,
         profileId: currentRecord.profileId || activeProfileId,
+        vehicleId: currentRecord.vehicleId || currentRecord.profileId || activeProfileId,
+        userId: currentRecord.userId || activeUserId,
         fuel: currentRecord.fuel,
         row: currentRecord.row,
         refuelDate: currentRecord.refuelDate,
@@ -1685,6 +1749,10 @@
   }
 
   function handleReceiptCloudAction() {
+    if (queue.length) {
+      syncQueue();
+      return;
+    }
     const record = activeReceiptScan();
     if (!record) {
       refreshConfig().catch(function (error) {
@@ -1956,6 +2024,10 @@
     els.saveButton.addEventListener("click", function () {
       if (Date.now() < suppressReceiptActionClickUntil) return;
       playSound("other");
+      if (queue.length && isRefuelDraftEmpty()) {
+        syncQueue();
+        return;
+      }
       if (activeReceiptScan() && isRefuelDraftEmpty()) {
         handleReceiptCloudAction();
         return;
@@ -2072,10 +2144,11 @@
 
     if (els.profileTiles) {
       els.profileTiles.addEventListener("click", function (event) {
-        const button = event.target && event.target.closest ? event.target.closest("[data-profile-id]") : null;
+        const button = event.target && event.target.closest ? event.target.closest("[data-user-id], [data-vehicle-id]") : null;
         if (!button) return;
         playSound("other");
-        chooseProfile(button.dataset.profileId);
+        if (button.dataset.userId) chooseUser(button.dataset.userId);
+        else if (button.dataset.vehicleId) chooseVehicle(chooserUserId || activeUserId, button.dataset.vehicleId);
       });
     }
 
