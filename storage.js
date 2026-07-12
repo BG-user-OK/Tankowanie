@@ -1,12 +1,13 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v3.0.1";
-  const API_VERSION = "TANKOWANIE_API_V3";
+  const APP_VERSION = "v3.1.0";
+  const API_VERSION = "TANKOWANIE_API_V4";
   const PREFIX = "tankowanie_v1";
   const PROFILE_BG = "BG";
   const PROFILE_HANIA = "HANIA_CLIO3";
-  const PROFILE_IDS = [PROFILE_BG, PROFILE_HANIA];
+  const PROFILE_CLIO5 = "CLIO5_IWONA";
+  const PROFILE_IDS = [PROFILE_BG, PROFILE_HANIA, PROFILE_CLIO5];
 
   const GLOBAL_KEYS = {
     settings: `${PREFIX}_settings`,
@@ -45,6 +46,9 @@
     if (raw === PROFILE_HANIA || raw === "HANIA" || raw === "CLIO3" || raw === "HANIA_CLIO3") {
       return PROFILE_HANIA;
     }
+    if (raw === PROFILE_CLIO5 || raw === "CLIO5" || raw === "CLIO5-IWONA" || raw === "IWONA") {
+      return PROFILE_CLIO5;
+    }
     return PROFILE_BG;
   }
 
@@ -57,7 +61,9 @@
 
   function vehiclesForUser(userId) {
     const user = normalizeUserId(userId);
-    if (user === "HANIA" || user === "MICHAŁ" || user === "MAJA") return [PROFILE_HANIA];
+    if (user === "HANIA") return [PROFILE_HANIA, PROFILE_CLIO5];
+    if (user === "IWONA") return [PROFILE_CLIO5];
+    if (user === "MICHAŁ" || user === "MAJA") return [PROFILE_HANIA];
     if (user === "BG") return PROFILE_IDS.slice();
     return [];
   }
@@ -70,11 +76,15 @@
   }
 
   function activeFuelForProfile(profileId) {
-    return normalizeProfileId(profileId) === PROFILE_HANIA ? "E95" : "LPG";
+    const profile = normalizeProfileId(profileId);
+    return profile === PROFILE_HANIA ? "E95" : "LPG";
   }
 
   function fuelsForProfile(profileId) {
-    return normalizeProfileId(profileId) === PROFILE_HANIA ? ["E95"] : ["LPG", "E98"];
+    const profile = normalizeProfileId(profileId);
+    if (profile === PROFILE_HANIA) return ["E95"];
+    if (profile === PROFILE_CLIO5) return ["LPG", "E95"];
+    return ["LPG", "E98"];
   }
 
   function normalizeFuelForProfile(fuel, profileId) {
@@ -271,6 +281,29 @@
   }
 
   function defaultHints() {
+    if (activeProfileId === PROFILE_CLIO5) {
+      return {
+        discountPerLiter: 0.21,
+        latestOdometer: 47670,
+        fuels: {
+          LPG: Object.assign(emptyFuelHint(), {
+            suggestedPumpPrice: 2.89,
+            lastOdometer: 47670,
+            history: [{
+              odometer: 47670,
+              source: "initial"
+            }]
+          }),
+          E95: Object.assign(emptyFuelHint(), {
+            lastOdometer: 47670,
+            history: [{
+              odometer: 47670,
+              source: "initial"
+            }]
+          })
+        }
+      };
+    }
     if (activeProfileId === PROFILE_HANIA) {
       return {
         discountPerLiter: 0.21,
@@ -316,7 +349,7 @@
   function defaultResults() {
     return {
       monthlyLabel: "",
-      monthlyAverage: activeProfileId === PROFILE_HANIA ? "0" : "",
+      monthlyAverage: activeProfileId === PROFILE_HANIA || activeProfileId === PROFILE_CLIO5 ? "0" : "",
       lastLpgResult: "",
       lastReadAt: "",
       lastSyncAt: "",

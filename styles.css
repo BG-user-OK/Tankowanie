@@ -891,6 +891,14 @@ h2 {
   background: #db2777;
 }
 
+body[data-profile="clio5_iwona"] .inline-keypad-grid.fuel-lpg {
+  background: #d1d5db;
+}
+
+body[data-profile="clio5_iwona"] .inline-keypad-grid.fuel-e95 {
+  background: #facc15;
+}
+
 .inline-keypad-grid button {
   position: relative;
   z-index: 1;

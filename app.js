@@ -18,6 +18,8 @@
       receiptFilePrefix: "BG_ORLEN",
       supportsFastSecondFuel: true,
       showFuelImage: true,
+      imageFuels: ["LPG", "E98"],
+      footerImage: "grafiki/Orlen-flota.jpg",
       staticFuelLabel: ""
     },
     HANIA_CLIO3: {
@@ -31,12 +33,29 @@
       receiptFilePrefix: "CLIO3_ORLEN",
       supportsFastSecondFuel: false,
       showFuelImage: false,
+      imageFuels: [],
+      footerImage: "grafiki/Orlen-flota.jpg",
+      staticFuelLabel: "E95"
+    },
+    CLIO5_IWONA: {
+      id: "CLIO5_IWONA",
+      label: "Clio5-Iwona",
+      switchLabel: "Auto",
+      tileColor: "#7c3aed",
+      fuels: ["LPG", "E95"],
+      defaultFuel: "LPG",
+      footerText: "Clio5-Iwona",
+      receiptFilePrefix: "CLIO5_IWONA_ORLEN",
+      supportsFastSecondFuel: false,
+      showFuelImage: true,
+      imageFuels: ["LPG"],
+      footerImage: "grafiki/Clio5-Orlen.bmp",
       staticFuelLabel: "E95"
     }
   };
   const USER_TILES = [
     { id: "BG", label: "BG", active: true, color: "#2563eb" },
-    { id: "IWONA", label: "Iwona", active: false, color: "#7c3aed" },
+    { id: "IWONA", label: "Iwona", active: true, color: "#7c3aed" },
     { id: "HANIA", label: "Hania", active: true, color: "#db2777" },
     { id: "MICHAL", label: "Michał", active: true, color: "#0891b2" },
     { id: "MAJA", label: "Maja", active: true, color: "#ea580c" },
@@ -79,6 +98,14 @@
 
   function activeProfile() {
     return PROFILES[activeProfileId] || PROFILES.BG;
+  }
+
+  function isClio5Profile(profileId) {
+    return profileId === "CLIO5_IWONA";
+  }
+
+  function isAllowedClio5User(userId) {
+    return ["IWONA", "BG", "HANIA"].indexOf(String(userId || "").toUpperCase()) !== -1;
   }
 
   function userTile(userId) {
@@ -206,6 +233,17 @@
   function fuelImagePath(fuel) {
     const version = encodeURIComponent(storage.APP_VERSION);
     return fuel === "E98" ? `grafiki/E98.png?v=${version}` : `grafiki/LPG.png?v=${version}`;
+  }
+
+  function versionedAssetPath(path) {
+    const assetPath = String(path || "");
+    if (!assetPath || assetPath.indexOf("?") !== -1) return assetPath;
+    return `${assetPath}?v=${encodeURIComponent(storage.APP_VERSION)}`;
+  }
+
+  function shouldShowFuelImage(profile, fuel) {
+    if (Array.isArray(profile.imageFuels)) return profile.imageFuels.indexOf(fuel) !== -1;
+    return !!profile.showFuelImage;
   }
 
   function emptyFuelHint() {
@@ -1074,15 +1112,16 @@
     document.body.classList.toggle("editing-discount", activeEdit === "discount");
     if (ensureDefaultDateForEmptyDraft()) storage.saveDraft(draft);
     const profile = activeProfile();
+    const showFuelImage = shouldShowFuelImage(profile, draft.fuel);
     if (els.fuelToggleImage) {
-      els.fuelToggleImage.hidden = !profile.showFuelImage;
-      if (profile.showFuelImage) {
+      els.fuelToggleImage.hidden = !showFuelImage;
+      if (showFuelImage) {
         els.fuelToggleImage.src = fuelImagePath(draft.fuel);
         els.fuelToggleImage.alt = draft.fuel;
       }
     }
     if (els.fuelStaticLabel) {
-      els.fuelStaticLabel.hidden = profile.showFuelImage;
+      els.fuelStaticLabel.hidden = showFuelImage;
       els.fuelStaticLabel.textContent = profile.staticFuelLabel || draft.fuel;
     }
     if (els.fuelToggle) {
@@ -1098,6 +1137,10 @@
     }
     document.body.dataset.profile = activeProfileId.toLowerCase();
     document.body.dataset.fuel = draft.fuel.toLowerCase();
+    if (els.flotaImage) {
+      els.flotaImage.src = versionedAssetPath(profile.footerImage || "grafiki/Orlen-flota.jpg");
+      els.flotaImage.alt = profile.footerText || "Orlen Flota";
+    }
     els.refuelDate.value = draft.date || todayIso();
     if (els.dateValue) els.dateValue.textContent = formatShortDate(els.refuelDate.value);
     if (els.dateButton) setValueState(els.dateButton, !!els.refuelDate.value);
@@ -1241,6 +1284,9 @@
     const paid = paidPrice();
     const discount = effectiveDiscount();
 
+    if (isClio5Profile(activeProfileId) && !isAllowedClio5User(activeUserId)) {
+      throw new Error("Ten użytkownik nie ma dostępu do Clio5-Iwona.");
+    }
     if (!Number.isInteger(odometer) || odometer <= 0) throw new Error("Uzupełnij licznik.");
     if (!Number.isFinite(liters) || liters <= 0) throw new Error("Uzupełnij ilość paliwa.");
     if (!Number.isFinite(price) || price <= 0) throw new Error("Uzupełnij cenę z dystrybutora.");
@@ -1459,6 +1505,7 @@
 
   function shouldTrackReceiptForEntry(entry) {
     if (!entry) return false;
+    if (activeProfileId === "CLIO5_IWONA") return entry.fuel === "LPG" || entry.fuel === "E95";
     if (activeProfileId === "HANIA_CLIO3") return entry.fuel === "E95";
     if (entry.fuel === "LPG") return true;
     if (entry.fuel === "E98") return !isCombinedE98WithCurrentLpg(entry);
@@ -2163,6 +2210,7 @@
   function cacheElements() {
     [
       "profileChooser", "profileTiles", "profileSwitchButton", "profileFooterText",
+      "flotaImage",
       "settingsToggle", "onlineState", "syncState", "queueState", "monthlyAverage",
       "monthlyLabel", "monthlyHeading", "todayResultValue", "lastResultValue",
       "lastSheetRead", "fuelToggle", "fuelToggleImage", "fuelStaticLabel", "refuelDate", "dateButton",
