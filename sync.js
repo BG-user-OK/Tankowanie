@@ -59,7 +59,9 @@
     const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
       action: "config",
       pin: settings.pin,
-      profileId: settings.profileId || "BG"
+      profileId: settings.profileId || "BG",
+      vehicleId: settings.vehicleId || settings.profileId || "BG",
+      userId: settings.userId || "BG"
     }));
     if (!response || response.ok !== true) {
       throw new Error(response && response.error ? response.error : "Config failed.");

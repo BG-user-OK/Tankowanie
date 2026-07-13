@@ -891,6 +891,10 @@ h2 {
   background: #db2777;
 }
 
+.inline-keypad-grid.fuel-on {
+  background: #facc15;
+}
+
 body[data-profile="clio5_iwona"] .inline-keypad-grid.fuel-lpg {
   background: #d1d5db;
 }
@@ -956,6 +960,25 @@ body.editing-discount footer {
   height: 100%;
   max-width: 100%;
   object-fit: contain;
+}
+
+.flota-image-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px 86px 10px 12px;
+  background: #000;
+  color: #facc15;
+  font-size: 20px;
+  font-weight: 950;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.flota-image-fallback[hidden] {
+  display: none;
 }
 
 .profile-footer-text {

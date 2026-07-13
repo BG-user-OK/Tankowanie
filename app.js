@@ -51,6 +51,38 @@
       imageFuels: ["LPG"],
       footerImage: "grafiki/Clio5-Orlen.bmp",
       staticFuelLabel: "E95"
+    },
+    E_LS995_VW_CADDY: {
+      id: "E_LS995_VW_CADDY",
+      label: "E-LS995 _VW_CADDY",
+      switchLabel: "Auto",
+      tileColor: "#16a34a",
+      fuels: ["ON"],
+      defaultFuel: "ON",
+      footerText: "E-LS995 _VW_CADDY",
+      footerImageNamePart: "E-LS995_VW_CADDY",
+      receiptFilePrefix: "ON_E_LS995_VW_CADDY",
+      supportsFastSecondFuel: false,
+      showFuelImage: false,
+      imageFuels: [],
+      footerImage: "",
+      staticFuelLabel: "ON"
+    },
+    OK2071C_AUDI: {
+      id: "OK2071C_AUDI",
+      label: "OK2071C _AUDI",
+      switchLabel: "Auto",
+      tileColor: "#ca8a04",
+      fuels: ["ON"],
+      defaultFuel: "ON",
+      footerText: "OK2071C _AUDI",
+      footerImageNamePart: "OK2071C _AUDI",
+      receiptFilePrefix: "ON_OK2071C_AUDI",
+      supportsFastSecondFuel: false,
+      showFuelImage: false,
+      imageFuels: [],
+      footerImage: "",
+      staticFuelLabel: "ON"
     }
   };
   const USER_TILES = [
@@ -59,8 +91,8 @@
     { id: "HANIA", label: "Hania", active: true, color: "#db2777" },
     { id: "MICHAL", label: "Michał", active: true, color: "#0891b2" },
     { id: "MAJA", label: "Maja", active: true, color: "#ea580c" },
-    { id: "GOSIA", label: "Gosia", active: false, color: "#16a34a" },
-    { id: "GRZESIU", label: "Grzesiu", active: false, color: "#ca8a04" }
+    { id: "GOSIA", label: "Gosia", active: true, color: "#16a34a" },
+    { id: "GRZESIU", label: "Grzesiu", active: true, color: "#ca8a04" }
   ];
   let chooserMode = "user";
   let chooserUserId = "";
@@ -106,6 +138,14 @@
 
   function isAllowedClio5User(userId) {
     return ["IWONA", "BG", "HANIA"].indexOf(String(userId || "").toUpperCase()) !== -1;
+  }
+
+  function isOnProfile(profileId) {
+    return profileId === "E_LS995_VW_CADDY" || profileId === "OK2071C_AUDI";
+  }
+
+  function isAllowedOnUser(userId) {
+    return ["BG", "GOSIA", "GRZESIU"].indexOf(String(userId || "").toUpperCase()) !== -1;
   }
 
   function userTile(userId) {
@@ -239,6 +279,61 @@
     const assetPath = String(path || "");
     if (!assetPath || assetPath.indexOf("?") !== -1) return assetPath;
     return `${assetPath}?v=${encodeURIComponent(storage.APP_VERSION)}`;
+  }
+
+  const FOOTER_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
+
+  function footerImageBaseName(profile) {
+    if (!isOnProfile(activeProfileId)) return "";
+    return `${activeUserLabel()}_${profile.footerImageNamePart || profile.id}`;
+  }
+
+  function footerImageCandidates(profile) {
+    if (profile.footerImage) return [profile.footerImage];
+    const baseName = footerImageBaseName(profile);
+    if (!baseName) return ["grafiki/Orlen-flota.jpg"];
+    return FOOTER_IMAGE_EXTENSIONS.map(function (extension) {
+      return `grafiki/${baseName}.${extension}`;
+    });
+  }
+
+  function setFooterImage(profile) {
+    if (!els.flotaImage) return;
+    const candidates = footerImageCandidates(profile);
+    const fallbackText = footerImageBaseName(profile);
+    const footerKey = `${fallbackText}|${candidates.join("|")}|${storage.APP_VERSION}`;
+    if (els.flotaImage.dataset.footerKey === footerKey) return;
+    els.flotaImage.dataset.footerKey = footerKey;
+    let index = 0;
+
+    function showFallback() {
+      els.flotaImage.hidden = true;
+      els.flotaImage.removeAttribute("src");
+      if (els.flotaImageFallback) {
+        els.flotaImageFallback.hidden = !fallbackText;
+        els.flotaImageFallback.textContent = fallbackText || "";
+      }
+    }
+
+    function tryNext() {
+      if (index >= candidates.length) {
+        showFallback();
+        return;
+      }
+      const candidate = candidates[index];
+      index += 1;
+      els.flotaImage.hidden = false;
+      if (els.flotaImageFallback) els.flotaImageFallback.hidden = true;
+      els.flotaImage.alt = profile.footerText || fallbackText || "Orlen Flota";
+      els.flotaImage.onerror = tryNext;
+      els.flotaImage.onload = function () {
+        els.flotaImage.onerror = null;
+        if (els.flotaImageFallback) els.flotaImageFallback.hidden = true;
+      };
+      els.flotaImage.src = versionedAssetPath(candidate);
+    }
+
+    tryNext();
   }
 
   function shouldShowFuelImage(profile, fuel) {
@@ -1134,13 +1229,11 @@
       els.inlineKeypadGrid.classList.toggle("fuel-lpg", draft.fuel === "LPG");
       els.inlineKeypadGrid.classList.toggle("fuel-e98", draft.fuel === "E98");
       els.inlineKeypadGrid.classList.toggle("fuel-e95", draft.fuel === "E95");
+      els.inlineKeypadGrid.classList.toggle("fuel-on", draft.fuel === "ON");
     }
     document.body.dataset.profile = activeProfileId.toLowerCase();
     document.body.dataset.fuel = draft.fuel.toLowerCase();
-    if (els.flotaImage) {
-      els.flotaImage.src = versionedAssetPath(profile.footerImage || "grafiki/Orlen-flota.jpg");
-      els.flotaImage.alt = profile.footerText || "Orlen Flota";
-    }
+    setFooterImage(profile);
     els.refuelDate.value = draft.date || todayIso();
     if (els.dateValue) els.dateValue.textContent = formatShortDate(els.refuelDate.value);
     if (els.dateButton) setValueState(els.dateButton, !!els.refuelDate.value);
@@ -1153,7 +1246,9 @@
     els.pinInput.value = settings.pin || "";
     if (els.appVersionLabel) els.appVersionLabel.textContent = storage.APP_VERSION;
     if (els.profileFooterText) {
-      const footerText = activeProfileId === "BG" ? "" : `${profile.label} - tankuje ${activeUserLabel()}`;
+      const footerText = isOnProfile(activeProfileId)
+        ? `${activeUserLabel()} - ${profile.label}`
+        : activeProfileId === "BG" ? "" : `${profile.label} - tankuje ${activeUserLabel()}`;
       els.profileFooterText.hidden = !footerText;
       els.profileFooterText.textContent = footerText;
     }
@@ -1283,6 +1378,9 @@
     const date = normalizeDateIso(els.refuelDate.value || draft.date) || todayIso();
     const paid = paidPrice();
     const discount = effectiveDiscount();
+    if (isOnProfile(activeProfileId) && !isAllowedOnUser(activeUserId)) {
+      throw new Error("Ten uzytkownik nie ma dostepu do tego auta.");
+    }
 
     if (isClio5Profile(activeProfileId) && !isAllowedClio5User(activeUserId)) {
       throw new Error("Ten użytkownik nie ma dostępu do Clio5-Iwona.");
@@ -1507,6 +1605,7 @@
     if (!entry) return false;
     if (activeProfileId === "CLIO5_IWONA") return entry.fuel === "LPG" || entry.fuel === "E95";
     if (activeProfileId === "HANIA_CLIO3") return entry.fuel === "E95";
+    if (isOnProfile(activeProfileId)) return entry.fuel === "ON";
     if (entry.fuel === "LPG") return true;
     if (entry.fuel === "E98") return !isCombinedE98WithCurrentLpg(entry);
     return false;
@@ -2210,7 +2309,7 @@
   function cacheElements() {
     [
       "profileChooser", "profileTiles", "profileSwitchButton", "profileFooterText",
-      "flotaImage",
+      "flotaImage", "flotaImageFallback",
       "settingsToggle", "onlineState", "syncState", "queueState", "monthlyAverage",
       "monthlyLabel", "monthlyHeading", "todayResultValue", "lastResultValue",
       "lastSheetRead", "fuelToggle", "fuelToggleImage", "fuelStaticLabel", "refuelDate", "dateButton",

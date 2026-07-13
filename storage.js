@@ -1,13 +1,15 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v3.1.0";
-  const API_VERSION = "TANKOWANIE_API_V4";
+  const APP_VERSION = "v3.2.0";
+  const API_VERSION = "TANKOWANIE_API_V5";
   const PREFIX = "tankowanie_v1";
   const PROFILE_BG = "BG";
   const PROFILE_HANIA = "HANIA_CLIO3";
   const PROFILE_CLIO5 = "CLIO5_IWONA";
-  const PROFILE_IDS = [PROFILE_BG, PROFILE_HANIA, PROFILE_CLIO5];
+  const PROFILE_CADDY = "E_LS995_VW_CADDY";
+  const PROFILE_AUDI = "OK2071C_AUDI";
+  const PROFILE_IDS = [PROFILE_BG, PROFILE_HANIA, PROFILE_CLIO5, PROFILE_CADDY, PROFILE_AUDI];
 
   const GLOBAL_KEYS = {
     settings: `${PREFIX}_settings`,
@@ -42,12 +44,18 @@
   };
 
   function normalizeProfileId(profileId) {
-    const raw = String(profileId || "").trim().toUpperCase();
+    const raw = String(profileId || "").trim().toUpperCase().replace(/\s+/g, "_");
     if (raw === PROFILE_HANIA || raw === "HANIA" || raw === "CLIO3" || raw === "HANIA_CLIO3") {
       return PROFILE_HANIA;
     }
     if (raw === PROFILE_CLIO5 || raw === "CLIO5" || raw === "CLIO5-IWONA" || raw === "IWONA") {
       return PROFILE_CLIO5;
+    }
+    if (raw === PROFILE_CADDY || raw === "E-LS995__VW_CADDY" || raw === "E-LS995_VW_CADDY" || raw === "VW_CADDY" || raw === "CADDY") {
+      return PROFILE_CADDY;
+    }
+    if (raw === PROFILE_AUDI || raw === "OK2071C__AUDI" || raw === "OK2071C_AUDI" || raw === "AUDI") {
+      return PROFILE_AUDI;
     }
     return PROFILE_BG;
   }
@@ -64,6 +72,7 @@
     if (user === "HANIA") return [PROFILE_HANIA, PROFILE_CLIO5];
     if (user === "IWONA") return [PROFILE_CLIO5];
     if (user === "MICHAŁ" || user === "MAJA") return [PROFILE_HANIA];
+    if (user === "GOSIA" || user === "GRZESIU") return [PROFILE_CADDY, PROFILE_AUDI];
     if (user === "BG") return PROFILE_IDS.slice();
     return [];
   }
@@ -77,6 +86,7 @@
 
   function activeFuelForProfile(profileId) {
     const profile = normalizeProfileId(profileId);
+    if (profile === PROFILE_CADDY || profile === PROFILE_AUDI) return "ON";
     return profile === PROFILE_HANIA ? "E95" : "LPG";
   }
 
@@ -84,6 +94,7 @@
     const profile = normalizeProfileId(profileId);
     if (profile === PROFILE_HANIA) return ["E95"];
     if (profile === PROFILE_CLIO5) return ["LPG", "E95"];
+    if (profile === PROFILE_CADDY || profile === PROFILE_AUDI) return ["ON"];
     return ["LPG", "E98"];
   }
 
@@ -93,12 +104,22 @@
     return fuels.indexOf(normalized) !== -1 ? normalized : activeFuelForProfile(profileId);
   }
 
-  function profilePrefix(profileId) {
+  function legacyProfilePrefix(profileId) {
     return `${PREFIX}_profile_${normalizeProfileId(profileId)}`;
   }
 
-  function profileKey(name, profileId) {
-    return `${profilePrefix(profileId || activeProfileId)}_${PROFILE_KEYS[name]}`;
+  function profilePrefix(profileId, userId) {
+    return `${PREFIX}_user_${normalizeUserId(userId || activeUserId)}_profile_${normalizeProfileId(profileId)}`;
+  }
+
+  function profileKey(name, profileId, userId) {
+    const profile = normalizeProfileId(profileId || activeProfileId);
+    const key = `${profilePrefix(profile, userId || activeUserId)}_${PROFILE_KEYS[name]}`;
+    if (localStorage.getItem(key) === null) {
+      const legacyValue = localStorage.getItem(`${legacyProfilePrefix(profile)}_${PROFILE_KEYS[name]}`);
+      if (legacyValue !== null) localStorage.setItem(key, legacyValue);
+    }
+    return key;
   }
 
   function loadJSON(key, fallback) {
@@ -116,10 +137,12 @@
 
   function migrateLegacyBg() {
     Object.keys(LEGACY_KEYS).forEach(function (name) {
-      const targetKey = profileKey(name, PROFILE_BG);
-      if (localStorage.getItem(targetKey) !== null) return;
+      const targetKey = `${legacyProfilePrefix(PROFILE_BG)}_${PROFILE_KEYS[name]}`;
+      const userTargetKey = `${profilePrefix(PROFILE_BG, "BG")}_${PROFILE_KEYS[name]}`;
       const legacyValue = localStorage.getItem(LEGACY_KEYS[name]);
-      if (legacyValue !== null) localStorage.setItem(targetKey, legacyValue);
+      if (legacyValue === null) return;
+      if (localStorage.getItem(targetKey) === null) localStorage.setItem(targetKey, legacyValue);
+      if (localStorage.getItem(userTargetKey) === null) localStorage.setItem(userTargetKey, legacyValue);
     });
   }
 
@@ -281,6 +304,15 @@
   }
 
   function defaultHints() {
+    if (activeProfileId === PROFILE_CADDY || activeProfileId === PROFILE_AUDI) {
+      return {
+        discountPerLiter: 0.21,
+        latestOdometer: 0,
+        fuels: {
+          ON: emptyFuelHint()
+        }
+      };
+    }
     if (activeProfileId === PROFILE_CLIO5) {
       return {
         discountPerLiter: 0.21,
@@ -349,7 +381,7 @@
   function defaultResults() {
     return {
       monthlyLabel: "",
-      monthlyAverage: activeProfileId === PROFILE_HANIA || activeProfileId === PROFILE_CLIO5 ? "0" : "",
+      monthlyAverage: activeProfileId === PROFILE_HANIA || activeProfileId === PROFILE_CLIO5 || activeProfileId === PROFILE_CADDY || activeProfileId === PROFILE_AUDI ? "0" : "",
       lastLpgResult: "",
       lastReadAt: "",
       lastSyncAt: "",
