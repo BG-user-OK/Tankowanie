@@ -1,167 +1,393 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v3.2.0";
-  const API_VERSION = "TANKOWANIE_API_V5";
-  const PREFIX = "tankowanie_v1";
-  const PROFILE_BG = "BG";
-  const PROFILE_HANIA = "HANIA_CLIO3";
-  const PROFILE_CLIO5 = "CLIO5_IWONA";
-  const PROFILE_CADDY = "E_LS995_VW_CADDY";
-  const PROFILE_AUDI = "OK2071C_AUDI";
-  const PROFILE_IDS = [PROFILE_BG, PROFILE_HANIA, PROFILE_CLIO5, PROFILE_CADDY, PROFILE_AUDI];
+  const APP_VERSION = "v4.0.0";
+  const API_VERSION = "TANKOWANIE_API_V6";
+  const PREFIX = "tankowanie_v2";
+  const LEGACY_PREFIX = "tankowanie_v1";
 
-  const GLOBAL_KEYS = {
-    settings: `${PREFIX}_settings`,
-    selectedUser: `${PREFIX}_selected_user`,
-    selectedVehicle: `${PREFIX}_selected_vehicle`,
-    selectedProfile: `${PREFIX}_selected_profile`,
-    deviceId: `${PREFIX}_device_id`
+  const CARS = {
+    BG: {
+      carId: "BG",
+      profileId: "BG",
+      fuels: ["LPG", "E98"],
+      defaultFuel: "LPG",
+      allowedUsers: ["BG"]
+    },
+    CLIO3: {
+      carId: "CLIO3",
+      profileId: "HANIA_CLIO3",
+      fuels: ["E95"],
+      defaultFuel: "E95",
+      allowedUsers: ["BG", "HANIA", "MICHAL", "MAJA"]
+    },
+    CLIO5: {
+      carId: "CLIO5",
+      profileId: "CLIO5_IWONA",
+      fuels: ["LPG", "E95"],
+      defaultFuel: "LPG",
+      allowedUsers: ["BG", "IWONA", "HANIA"]
+    },
+    E_LS995_VW_CADDY: {
+      carId: "E_LS995_VW_CADDY",
+      profileId: "E_LS995_VW_CADDY",
+      fuels: ["ON"],
+      defaultFuel: "ON",
+      allowedUsers: ["BG", "GOSIA", "GRZESIU"]
+    },
+    OK2071C_AUDI: {
+      carId: "OK2071C_AUDI",
+      profileId: "OK2071C_AUDI",
+      fuels: ["ON"],
+      defaultFuel: "ON",
+      allowedUsers: ["BG", "GOSIA", "GRZESIU"]
+    }
+  };
+  const CAR_IDS = Object.keys(CARS);
+
+  const DEVICE_KEYS = {
+    settings: `${PREFIX}__device__settings`,
+    id: `${PREFIX}__device__id`,
+    activeUser: `${PREFIX}__device__activeUser`,
+    migration: `${PREFIX}__migration__v1`,
+    quarantine: `${PREFIX}__migration__quarantine`
   };
 
-  const PROFILE_KEYS = {
-    draft: "draft",
-    queue: "queue",
-    receiptScans: "receipt_scans",
-    pendingScan: "pending_scan",
-    lastSummary: "last_summary",
-    recentRefuel: "recent_refuel",
-    entryUndoSnapshot: "entry_undo_snapshot",
-    hints: "hints",
-    results: "results"
-  };
-
-  const LEGACY_KEYS = {
-    draft: `${PREFIX}_draft`,
-    queue: `${PREFIX}_queue`,
-    receiptScans: `${PREFIX}_receipt_scans`,
-    pendingScan: `${PREFIX}_pending_scan`,
-    lastSummary: `${PREFIX}_last_summary`,
-    recentRefuel: `${PREFIX}_recent_refuel`,
-    entryUndoSnapshot: `${PREFIX}_entry_undo_snapshot`,
-    hints: `${PREFIX}_hints`,
-    results: `${PREFIX}_results`
-  };
-
-  function normalizeProfileId(profileId) {
-    const raw = String(profileId || "").trim().toUpperCase().replace(/\s+/g, "_");
-    if (raw === PROFILE_HANIA || raw === "HANIA" || raw === "CLIO3" || raw === "HANIA_CLIO3") {
-      return PROFILE_HANIA;
-    }
-    if (raw === PROFILE_CLIO5 || raw === "CLIO5" || raw === "CLIO5-IWONA" || raw === "IWONA") {
-      return PROFILE_CLIO5;
-    }
-    if (raw === PROFILE_CADDY || raw === "E-LS995__VW_CADDY" || raw === "E-LS995_VW_CADDY" || raw === "VW_CADDY" || raw === "CADDY") {
-      return PROFILE_CADDY;
-    }
-    if (raw === PROFILE_AUDI || raw === "OK2071C__AUDI" || raw === "OK2071C_AUDI" || raw === "AUDI") {
-      return PROFILE_AUDI;
-    }
-    return PROFILE_BG;
-  }
+  const LEGACY_SUFFIXES = [
+    "entry_undo_snapshot",
+    "receipt_scans",
+    "pending_scan",
+    "last_summary",
+    "recent_refuel",
+    "results",
+    "hints",
+    "queue",
+    "draft"
+  ];
 
   function normalizeUserId(userId) {
-    const raw = String(userId || "").trim().toUpperCase();
-    if (raw === "HANIA" || raw === "MICHAŁ" || raw === "MICHAL" || raw === "MAJA") return raw === "MICHAL" ? "MICHAŁ" : raw;
-    if (raw === "IWONA" || raw === "GOSIA" || raw === "GRZESIU") return raw;
+    const raw = String(userId || "")
+      .trim()
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    if (["BG", "IWONA", "HANIA", "MICHAL", "MAJA", "GOSIA", "GRZESIU"].indexOf(raw) !== -1) {
+      return raw;
+    }
     return "BG";
+  }
+
+  function normalizeCarId(value) {
+    const raw = String(value || "").trim().toUpperCase().replace(/\s+/g, "_");
+    if (!raw || raw === "BG") return "BG";
+    if (raw === "CLIO3" || raw === "HANIA" || raw === "HANIA_CLIO3") return "CLIO3";
+    if (raw === "CLIO5" || raw === "IWONA" || raw === "CLIO5_IWONA" || raw === "CLIO5-IWONA") return "CLIO5";
+    if (
+      raw === "E_LS995_VW_CADDY"
+      || raw === "E-LS995__VW_CADDY"
+      || raw === "E-LS995_VW_CADDY"
+      || raw === "VW_CADDY"
+      || raw === "CADDY"
+    ) return "E_LS995_VW_CADDY";
+    if (raw === "OK2071C_AUDI" || raw === "OK2071C__AUDI" || raw === "AUDI") return "OK2071C_AUDI";
+    return "";
+  }
+
+  function carDefinition(carId) {
+    return CARS[normalizeCarId(carId)] || CARS.BG;
+  }
+
+  function profileIdForCar(carId) {
+    return carDefinition(carId).profileId;
   }
 
   function vehiclesForUser(userId) {
     const user = normalizeUserId(userId);
-    if (user === "HANIA") return [PROFILE_HANIA, PROFILE_CLIO5];
-    if (user === "IWONA") return [PROFILE_CLIO5];
-    if (user === "MICHAŁ" || user === "MAJA") return [PROFILE_HANIA];
-    if (user === "GOSIA" || user === "GRZESIU") return [PROFILE_CADDY, PROFILE_AUDI];
-    if (user === "BG") return PROFILE_IDS.slice();
-    return [];
+    return CAR_IDS.filter(function (carId) {
+      return CARS[carId].allowedUsers.indexOf(user) !== -1;
+    });
   }
 
-  function normalizeVehicleForUser(vehicleId, userId) {
+  function normalizeCarForUser(carId, userId) {
     const allowed = vehiclesForUser(userId);
-    const vehicle = normalizeProfileId(vehicleId);
-    if (allowed.indexOf(vehicle) !== -1) return vehicle;
-    return allowed[0] || PROFILE_BG;
+    const normalized = normalizeCarId(carId);
+    return allowed.indexOf(normalized) !== -1 ? normalized : (allowed[0] || "BG");
   }
 
-  function activeFuelForProfile(profileId) {
-    const profile = normalizeProfileId(profileId);
-    if (profile === PROFILE_CADDY || profile === PROFILE_AUDI) return "ON";
-    return profile === PROFILE_HANIA ? "E95" : "LPG";
+  function normalizeFuel(fuelId, carId) {
+    const car = carDefinition(carId);
+    const normalized = String(fuelId || "").trim().toUpperCase();
+    return car.fuels.indexOf(normalized) !== -1 ? normalized : car.defaultFuel;
   }
 
-  function fuelsForProfile(profileId) {
-    const profile = normalizeProfileId(profileId);
-    if (profile === PROFILE_HANIA) return ["E95"];
-    if (profile === PROFILE_CLIO5) return ["LPG", "E95"];
-    if (profile === PROFILE_CADDY || profile === PROFILE_AUDI) return ["ON"];
-    return ["LPG", "E98"];
+  function userLastCarKey(userId) {
+    return `${PREFIX}__user__${normalizeUserId(userId)}__lastCar`;
   }
 
-  function normalizeFuelForProfile(fuel, profileId) {
-    const normalized = String(fuel || "").trim().toUpperCase();
-    const fuels = fuelsForProfile(profileId);
-    return fuels.indexOf(normalized) !== -1 ? normalized : activeFuelForProfile(profileId);
+  function workflowKey(carId) {
+    return `${PREFIX}__car__${normalizeCarId(carId) || "BG"}__workflow`;
   }
 
-  function legacyProfilePrefix(profileId) {
-    return `${PREFIX}_profile_${normalizeProfileId(profileId)}`;
+  function fuelKey(name, carId, fuelId) {
+    const normalizedCar = normalizeCarId(carId) || "BG";
+    const normalizedFuel = normalizeFuel(fuelId, normalizedCar);
+    return `${PREFIX}__car__${normalizedCar}__fuel__${normalizedFuel}__${name}`;
   }
 
-  function profilePrefix(profileId, userId) {
-    return `${PREFIX}_user_${normalizeUserId(userId || activeUserId)}_profile_${normalizeProfileId(profileId)}`;
-  }
-
-  function profileKey(name, profileId, userId) {
-    const profile = normalizeProfileId(profileId || activeProfileId);
-    const key = `${profilePrefix(profile, userId || activeUserId)}_${PROFILE_KEYS[name]}`;
-    if (localStorage.getItem(key) === null) {
-      const legacyValue = localStorage.getItem(`${legacyProfilePrefix(profile)}_${PROFILE_KEYS[name]}`);
-      if (legacyValue !== null) localStorage.setItem(key, legacyValue);
-    }
-    return key;
-  }
-
-  function loadJSON(key, fallback) {
+  function parseJSON(raw, fallback) {
     try {
-      const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : fallback;
     } catch (error) {
       return fallback;
     }
   }
 
+  function loadJSON(key, fallback) {
+    return parseJSON(localStorage.getItem(key), fallback);
+  }
+
   function saveJSON(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
   }
 
-  function migrateLegacyBg() {
-    Object.keys(LEGACY_KEYS).forEach(function (name) {
-      const targetKey = `${legacyProfilePrefix(PROFILE_BG)}_${PROFILE_KEYS[name]}`;
-      const userTargetKey = `${profilePrefix(PROFILE_BG, "BG")}_${PROFILE_KEYS[name]}`;
-      const legacyValue = localStorage.getItem(LEGACY_KEYS[name]);
-      if (legacyValue === null) return;
-      if (localStorage.getItem(targetKey) === null) localStorage.setItem(targetKey, legacyValue);
-      if (localStorage.getItem(userTargetKey) === null) localStorage.setItem(userTargetKey, legacyValue);
+  function createId(prefix) {
+    const cryptoObj = window.crypto || {};
+    if (typeof cryptoObj.randomUUID === "function") return `${prefix}_${cryptoObj.randomUUID()}`;
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function hasDraftInput(draft) {
+    if (!draft || typeof draft !== "object") return false;
+    return !!draft.odometer || !!draft.pumpPrice || !!Number(String(draft.liters || "").replace(",", "."));
+  }
+
+  function legacyScope(key, suffix) {
+    const ending = `_${suffix}`;
+    if (!key.endsWith(ending)) return null;
+    const base = key.slice(0, -ending.length);
+    if (base === LEGACY_PREFIX) return { carId: "", userId: "", kind: "global" };
+    const profilePrefix = `${LEGACY_PREFIX}_profile_`;
+    if (base.indexOf(profilePrefix) === 0) {
+      return { carId: normalizeCarId(base.slice(profilePrefix.length)), userId: "", kind: "profile" };
+    }
+    const userPrefix = `${LEGACY_PREFIX}_user_`;
+    if (base.indexOf(userPrefix) === 0) {
+      const rest = base.slice(userPrefix.length);
+      const marker = "_profile_";
+      const markerIndex = rest.indexOf(marker);
+      if (markerIndex > 0) {
+        return {
+          userId: normalizeUserId(rest.slice(0, markerIndex)),
+          carId: normalizeCarId(rest.slice(markerIndex + marker.length)),
+          kind: "userProfile"
+        };
+      }
+    }
+    return null;
+  }
+
+  function diagnosticRecord(sourceKey, type, reason, record) {
+    const source = record && typeof record === "object" ? record : {};
+    return {
+      sourceKey,
+      type,
+      reason,
+      entryId: String(source.entryId || ""),
+      carId: normalizeCarId(source.carId || source.vehicleId || source.profileId) || "",
+      fuelId: String(source.fuelId || source.fuel || "").toUpperCase(),
+      recordedAt: new Date().toISOString()
+    };
+  }
+
+  function resolveRecordScope(record, scope) {
+    const source = record && typeof record === "object" ? record : {};
+    const explicitCar = normalizeCarId(source.carId || source.vehicleId || source.profileId);
+    const carId = explicitCar || (scope && scope.carId) || "";
+    if (!carId) return { error: "missing-car" };
+    if (explicitCar && scope && scope.carId && explicitCar !== scope.carId) return { error: "conflicting-car" };
+    const rawFuel = String(source.fuelId || source.fuel || "").trim().toUpperCase();
+    const car = carDefinition(carId);
+    if (!rawFuel || car.fuels.indexOf(rawFuel) === -1) return { error: "missing-or-invalid-fuel" };
+    return { carId, fuelId: rawFuel };
+  }
+
+  function migrateLegacyData() {
+    if (localStorage.getItem(DEVICE_KEYS.migration)) return;
+
+    const quarantine = [];
+    const draftCandidates = {};
+    const queueCandidates = {};
+    const receiptCandidates = {};
+    const keys = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key && key.indexOf(LEGACY_PREFIX) === 0) keys.push(key);
+    }
+
+    const oldSettings = localStorage.getItem(`${LEGACY_PREFIX}_settings`);
+    if (localStorage.getItem(DEVICE_KEYS.settings) === null && oldSettings !== null) {
+      localStorage.setItem(DEVICE_KEYS.settings, oldSettings);
+    }
+    const oldDeviceId = localStorage.getItem(`${LEGACY_PREFIX}_device_id`);
+    if (localStorage.getItem(DEVICE_KEYS.id) === null && oldDeviceId) {
+      localStorage.setItem(DEVICE_KEYS.id, oldDeviceId);
+    }
+
+    const oldUser = normalizeUserId(localStorage.getItem(`${LEGACY_PREFIX}_selected_user`) || "BG");
+    if (localStorage.getItem(DEVICE_KEYS.activeUser) === null) localStorage.setItem(DEVICE_KEYS.activeUser, oldUser);
+    const oldCar = normalizeCarForUser(
+      localStorage.getItem(`${LEGACY_PREFIX}_selected_vehicle`)
+        || localStorage.getItem(`${LEGACY_PREFIX}_selected_profile`)
+        || "BG",
+      oldUser
+    );
+    if (localStorage.getItem(userLastCarKey(oldUser)) === null) localStorage.setItem(userLastCarKey(oldUser), oldCar);
+
+    keys.forEach(function (key) {
+      const suffix = LEGACY_SUFFIXES.find(function (item) { return key.endsWith(`_${item}`); });
+      if (!suffix) return;
+      const scope = legacyScope(key, suffix);
+      const value = parseJSON(localStorage.getItem(key), null);
+      if (!scope || value === null) return;
+
+      if (suffix === "draft" && hasDraftInput(value)) {
+        if (!scope.carId) {
+          quarantine.push(diagnosticRecord(key, "draft", "missing-car", value));
+          return;
+        }
+        const fuelId = normalizeFuel(value.fuel, scope.carId);
+        const candidate = Object.assign({}, value, {
+          fuel: fuelId,
+          carId: scope.carId,
+          profileId: profileIdForCar(scope.carId),
+          entryId: String(value.entryId || createId("entry")),
+          startedByUserId: String(value.startedByUserId || scope.userId || "")
+        });
+        const groupKey = `${scope.carId}|${fuelId}`;
+        const signature = JSON.stringify({
+          odometer: candidate.odometer || null,
+          pumpPrice: candidate.pumpPrice || null,
+          discountPerLiter: candidate.discountPerLiter || null,
+          liters: candidate.liters || "",
+          date: candidate.date || "",
+          fuel: fuelId
+        });
+        if (!draftCandidates[groupKey]) draftCandidates[groupKey] = [];
+        draftCandidates[groupKey].push({ key, candidate, signature });
+        return;
+      }
+
+      if (suffix === "queue" && Array.isArray(value)) {
+        value.forEach(function (record) {
+          const resolved = resolveRecordScope(record, scope);
+          if (resolved.error || !record || !record.entryId) {
+            quarantine.push(diagnosticRecord(key, "queue", resolved.error || "missing-entryId", record));
+            return;
+          }
+          const normalized = Object.assign({}, record, {
+            carId: resolved.carId,
+            vehicleId: resolved.carId,
+            profileId: profileIdForCar(resolved.carId),
+            fuelId: resolved.fuelId,
+            fuel: resolved.fuelId
+          });
+          const id = String(normalized.entryId);
+          if (queueCandidates[id] && JSON.stringify(queueCandidates[id].record) !== JSON.stringify(normalized)) {
+            quarantine.push(diagnosticRecord(key, "queue", "conflicting-entryId", record));
+            return;
+          }
+          queueCandidates[id] = { key, record: normalized };
+        });
+        return;
+      }
+
+      if (suffix === "pending_scan" || suffix === "receipt_scans") {
+        const records = Array.isArray(value) ? value : [value];
+        records.forEach(function (record) {
+          if (!record || (record.status !== "pending" && record.status !== "ready")) return;
+          const resolved = resolveRecordScope(record, scope);
+          if (resolved.error || !record.entryId) {
+            quarantine.push(diagnosticRecord(key, "receipt", resolved.error || "missing-entryId", record));
+            return;
+          }
+          const normalized = Object.assign({}, record, {
+            carId: resolved.carId,
+            vehicleId: resolved.carId,
+            profileId: profileIdForCar(resolved.carId),
+            fuelId: resolved.fuelId,
+            fuel: resolved.fuelId
+          });
+          const groupKey = `${resolved.carId}|${resolved.fuelId}`;
+          const previous = receiptCandidates[groupKey];
+          const rank = Date.parse(normalized.updatedAt || normalized.createdAt || "") || 0;
+          if (!previous || rank >= previous.rank) receiptCandidates[groupKey] = { key, record: normalized, rank };
+        });
+      }
+    });
+
+    Object.keys(draftCandidates).forEach(function (groupKey) {
+      const candidates = draftCandidates[groupKey];
+      const unique = {};
+      candidates.forEach(function (item) { unique[item.signature] = item; });
+      const signatures = Object.keys(unique);
+      if (signatures.length !== 1) {
+        candidates.forEach(function (item) {
+          quarantine.push(diagnosticRecord(item.key, "draft", "conflicting-drafts", item.candidate));
+        });
+        return;
+      }
+      const selected = unique[signatures[0]].candidate;
+      const target = fuelKey("draft", selected.carId, selected.fuel);
+      if (localStorage.getItem(target) === null) saveJSON(target, selected);
+    });
+
+    const queueGroups = {};
+    Object.keys(queueCandidates).forEach(function (entryId) {
+      const record = queueCandidates[entryId].record;
+      const groupKey = `${record.carId}|${record.fuel}`;
+      if (!queueGroups[groupKey]) queueGroups[groupKey] = [];
+      queueGroups[groupKey].push(record);
+    });
+    Object.keys(queueGroups).forEach(function (groupKey) {
+      const separator = groupKey.indexOf("|");
+      const carId = groupKey.slice(0, separator);
+      const fuelId = groupKey.slice(separator + 1);
+      const target = fuelKey("offlineQueue", carId, fuelId);
+      const existing = loadJSON(target, []);
+      const byId = {};
+      existing.concat(queueGroups[groupKey]).forEach(function (entry) {
+        if (entry && entry.entryId) byId[String(entry.entryId)] = entry;
+      });
+      saveJSON(target, Object.keys(byId).map(function (id) { return byId[id]; }));
+    });
+
+    Object.keys(receiptCandidates).forEach(function (groupKey) {
+      const record = receiptCandidates[groupKey].record;
+      const target = fuelKey("pendingReceipt", record.carId, record.fuel);
+      if (localStorage.getItem(target) === null) saveJSON(target, record);
+    });
+
+    saveJSON(DEVICE_KEYS.quarantine, quarantine);
+    saveJSON(DEVICE_KEYS.migration, {
+      completedAt: new Date().toISOString(),
+      quarantined: quarantine.length,
+      migratedQueues: Object.keys(queueCandidates).length,
+      migratedReceipts: Object.keys(receiptCandidates).length
     });
   }
 
-  let activeUserId = normalizeUserId(localStorage.getItem(GLOBAL_KEYS.selectedUser) || "");
-  let activeProfileId = normalizeVehicleForUser(
-    localStorage.getItem(GLOBAL_KEYS.selectedVehicle) || localStorage.getItem(GLOBAL_KEYS.selectedProfile) || PROFILE_BG,
-    activeUserId
-  );
-  localStorage.setItem(GLOBAL_KEYS.selectedUser, activeUserId);
-  localStorage.setItem(GLOBAL_KEYS.selectedVehicle, activeProfileId);
-  localStorage.setItem(GLOBAL_KEYS.selectedProfile, activeProfileId);
-  migrateLegacyBg();
+  migrateLegacyData();
+
+  let activeUserId = normalizeUserId(localStorage.getItem(DEVICE_KEYS.activeUser) || "BG");
+  let activeCarId = normalizeCarForUser(localStorage.getItem(userLastCarKey(activeUserId)) || "BG", activeUserId);
+  localStorage.setItem(DEVICE_KEYS.activeUser, activeUserId);
+  localStorage.setItem(userLastCarKey(activeUserId), activeCarId);
 
   function setActiveUser(userId) {
     activeUserId = normalizeUserId(userId);
-    activeProfileId = normalizeVehicleForUser(activeProfileId, activeUserId);
-    localStorage.setItem(GLOBAL_KEYS.selectedUser, activeUserId);
-    localStorage.setItem(GLOBAL_KEYS.selectedVehicle, activeProfileId);
-    localStorage.setItem(GLOBAL_KEYS.selectedProfile, activeProfileId);
+    activeCarId = normalizeCarForUser(localStorage.getItem(userLastCarKey(activeUserId)) || "", activeUserId);
+    localStorage.setItem(DEVICE_KEYS.activeUser, activeUserId);
+    localStorage.setItem(userLastCarKey(activeUserId), activeCarId);
     return activeUserId;
   }
 
@@ -173,119 +399,240 @@
     return vehiclesForUser(userId || activeUserId);
   }
 
-  function setActiveProfile(profileId) {
-    activeProfileId = normalizeVehicleForUser(profileId, activeUserId);
-    localStorage.setItem(GLOBAL_KEYS.selectedVehicle, activeProfileId);
-    localStorage.setItem(GLOBAL_KEYS.selectedProfile, activeProfileId);
-    if (activeProfileId === PROFILE_BG) migrateLegacyBg();
-    return activeProfileId;
+  function setActiveCar(carId) {
+    activeCarId = normalizeCarForUser(carId, activeUserId);
+    localStorage.setItem(userLastCarKey(activeUserId), activeCarId);
+    return activeCarId;
   }
 
-  function getActiveProfile() {
-    return activeProfileId;
+  function getActiveCar() {
+    return activeCarId;
   }
 
   function getProfiles() {
-    return PROFILE_IDS.slice();
-  }
-
-  function createId(prefix) {
-    const cryptoObj = window.crypto || {};
-    if (typeof cryptoObj.randomUUID === "function") {
-      return `${prefix}_${cryptoObj.randomUUID()}`;
-    }
-    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    return CAR_IDS.slice();
   }
 
   function getDeviceId() {
-    let id = localStorage.getItem(GLOBAL_KEYS.deviceId);
+    let id = localStorage.getItem(DEVICE_KEYS.id);
     if (!id) {
       id = createId("device");
-      localStorage.setItem(GLOBAL_KEYS.deviceId, id);
+      localStorage.setItem(DEVICE_KEYS.id, id);
     }
     return id;
   }
 
   function getSettings() {
-    return Object.assign({ endpointUrl: "", pin: "" }, loadJSON(GLOBAL_KEYS.settings, {}));
+    return Object.assign({ endpointUrl: "", pin: "" }, loadJSON(DEVICE_KEYS.settings, {}));
   }
 
   function saveSettings(settings) {
-    saveJSON(GLOBAL_KEYS.settings, {
-      endpointUrl: String(settings.endpointUrl || "").trim(),
-      pin: String(settings.pin || "").trim()
+    saveJSON(DEVICE_KEYS.settings, {
+      endpointUrl: String(settings && settings.endpointUrl || "").trim(),
+      pin: String(settings && settings.pin || "").trim()
     });
   }
 
-  function getDraft() {
-    const profileId = activeProfileId;
-    const draft = Object.assign({
-      fuel: activeFuelForProfile(profileId),
+  function getWorkflow(carId) {
+    const car = carDefinition(carId || activeCarId);
+    const stored = loadJSON(workflowKey(car.carId), {});
+    return {
+      activeFuel: normalizeFuel(stored.activeFuel, car.carId),
+      recentRefuel: stored.recentRefuel && typeof stored.recentRefuel === "object" ? stored.recentRefuel : null
+    };
+  }
+
+  function saveWorkflow(workflow, carId) {
+    const car = carDefinition(carId || activeCarId);
+    saveJSON(workflowKey(car.carId), {
+      activeFuel: normalizeFuel(workflow && workflow.activeFuel, car.carId),
+      recentRefuel: workflow && workflow.recentRefuel && typeof workflow.recentRefuel === "object"
+        ? workflow.recentRefuel
+        : null
+    });
+  }
+
+  function getActiveFuel(carId) {
+    return getWorkflow(carId).activeFuel;
+  }
+
+  function setActiveFuel(fuelId, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const workflow = getWorkflow(car.carId);
+    workflow.activeFuel = normalizeFuel(fuelId, car.carId);
+    saveWorkflow(workflow, car.carId);
+    return workflow.activeFuel;
+  }
+
+  function defaultDraft(carId, fuelId) {
+    const car = carDefinition(carId);
+    return {
+      entryId: "",
+      startedByUserId: "",
+      carId: car.carId,
+      profileId: car.profileId,
+      fuel: normalizeFuel(fuelId, car.carId),
       odometer: null,
       pumpPrice: null,
       discountPerLiter: null,
       discountPerLiterEdited: false,
       liters: "",
-      date: ""
-    }, loadJSON(profileKey("draft", profileId), {}));
-    draft.fuel = normalizeFuelForProfile(draft.fuel, profileId);
+      date: "",
+      activeEdit: "odometer",
+      userAdjustedDate: false
+    };
+  }
+
+  function getDraft(fuelId, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const fuel = normalizeFuel(fuelId || getActiveFuel(car.carId), car.carId);
+    const draft = Object.assign(defaultDraft(car.carId, fuel), loadJSON(fuelKey("draft", car.carId, fuel), {}));
+    draft.carId = car.carId;
+    draft.profileId = car.profileId;
+    draft.fuel = fuel;
     return draft;
   }
 
-  function saveDraft(draft) {
-    const nextDraft = Object.assign({}, draft || {});
-    nextDraft.fuel = normalizeFuelForProfile(nextDraft.fuel, activeProfileId);
-    saveJSON(profileKey("draft"), nextDraft);
+  function saveDraft(draft, carId) {
+    const car = carDefinition(carId || draft && draft.carId || activeCarId);
+    const fuel = normalizeFuel(draft && draft.fuel, car.carId);
+    const value = Object.assign(defaultDraft(car.carId, fuel), draft || {}, {
+      carId: car.carId,
+      profileId: car.profileId,
+      fuel
+    });
+    if (hasDraftInput(value)) {
+      if (!value.entryId) value.entryId = createId("entry");
+      if (!value.startedByUserId) value.startedByUserId = activeUserId;
+    }
+    setActiveFuel(fuel, car.carId);
+    saveJSON(fuelKey("draft", car.carId, fuel), value);
+    return value;
   }
 
-  function getQueue() {
-    const queue = loadJSON(profileKey("queue"), []);
-    return Array.isArray(queue) ? queue : [];
+  function getQueue(carId) {
+    const car = carDefinition(carId || activeCarId);
+    const queue = [];
+    car.fuels.forEach(function (fuel) {
+      const entries = loadJSON(fuelKey("offlineQueue", car.carId, fuel), []);
+      if (Array.isArray(entries)) queue.push.apply(queue, entries);
+    });
+    return queue.sort(function (a, b) {
+      return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+    });
   }
 
-  function saveQueue(queue) {
-    saveJSON(profileKey("queue"), Array.isArray(queue) ? queue : []);
+  function saveQueue(queue, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const groups = {};
+    car.fuels.forEach(function (fuel) { groups[fuel] = []; });
+    (Array.isArray(queue) ? queue : []).forEach(function (entry) {
+      if (!entry || !entry.entryId) return;
+      const entryCar = normalizeCarId(entry.carId || entry.vehicleId || entry.profileId) || car.carId;
+      if (entryCar !== car.carId) return;
+      const fuel = String(entry.fuelId || entry.fuel || "").toUpperCase();
+      if (car.fuels.indexOf(fuel) === -1) return;
+      groups[fuel].push(Object.assign({}, entry, {
+        carId: car.carId,
+        vehicleId: car.carId,
+        profileId: car.profileId,
+        fuelId: fuel,
+        fuel
+      }));
+    });
+    car.fuels.forEach(function (fuel) {
+      saveJSON(fuelKey("offlineQueue", car.carId, fuel), groups[fuel]);
+    });
   }
 
-  function getReceiptScans() {
-    const scans = loadJSON(profileKey("receiptScans"), []);
-    return Array.isArray(scans) ? scans : [];
+  function receiptRank(record) {
+    return Date.parse(record && (record.updatedAt || record.createdAt) || "") || 0;
+  }
+
+  function getReceiptScans(carId) {
+    const car = carDefinition(carId || activeCarId);
+    return car.fuels.map(function (fuel) {
+      return loadJSON(fuelKey("pendingReceipt", car.carId, fuel), null);
+    }).filter(function (record) {
+      return record && (record.status === "pending" || record.status === "ready");
+    }).sort(function (a, b) { return receiptRank(b) - receiptRank(a); });
   }
 
   function saveReceiptScans(scans) {
-    saveJSON(profileKey("receiptScans"), Array.isArray(scans) ? scans : []);
+    (Array.isArray(scans) ? scans : []).forEach(savePendingScan);
   }
 
-  function getPendingScan() {
-    return loadJSON(profileKey("pendingScan"), null);
+  function getPendingScan(carId) {
+    return getReceiptScans(carId)[0] || null;
   }
 
   function savePendingScan(scan) {
-    saveJSON(profileKey("pendingScan"), scan && typeof scan === "object" ? scan : null);
+    if (!scan || typeof scan !== "object") return null;
+    const carId = normalizeCarId(scan.carId || scan.vehicleId || scan.profileId) || activeCarId;
+    const car = carDefinition(carId);
+    const fuel = normalizeFuel(scan.fuelId || scan.fuel, car.carId);
+    const value = Object.assign({}, scan, {
+      carId: car.carId,
+      vehicleId: car.carId,
+      profileId: car.profileId,
+      fuelId: fuel,
+      fuel
+    });
+    saveJSON(fuelKey("pendingReceipt", car.carId, fuel), value);
+    return value;
   }
 
-  function getLastSummary() {
-    return Object.assign({ active: false }, loadJSON(profileKey("lastSummary"), {}));
+  function clearPendingScan(carId, fuelId, entryId) {
+    const car = carDefinition(carId || activeCarId);
+    const fuel = normalizeFuel(fuelId, car.carId);
+    const key = fuelKey("pendingReceipt", car.carId, fuel);
+    const current = loadJSON(key, null);
+    if (entryId && current && String(current.entryId || "") !== String(entryId)) return false;
+    localStorage.removeItem(key);
+    return true;
   }
 
-  function saveLastSummary(summary) {
-    saveJSON(profileKey("lastSummary"), summary && typeof summary === "object" ? summary : { active: false });
+  function getLastSummary(carId) {
+    const car = carDefinition(carId || activeCarId);
+    const summaries = {};
+    car.fuels.forEach(function (fuel) {
+      summaries[fuel] = loadJSON(fuelKey("lastSummary", car.carId, fuel), { active: false, fuel });
+    });
+    return summaries;
   }
 
-  function getRecentRefuel() {
-    return loadJSON(profileKey("recentRefuel"), null);
+  function saveLastSummary(summary, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const source = summary && typeof summary === "object" ? summary : {};
+    car.fuels.forEach(function (fuel) {
+      const value = source[fuel] || (source.fuel === fuel ? source : { active: false, fuel });
+      saveJSON(fuelKey("lastSummary", car.carId, fuel), value);
+    });
   }
 
-  function saveRecentRefuel(refuel) {
-    saveJSON(profileKey("recentRefuel"), refuel && typeof refuel === "object" ? refuel : null);
+  function getRecentRefuel(carId) {
+    return getWorkflow(carId).recentRefuel;
   }
 
-  function getEntryUndoSnapshot() {
-    return loadJSON(profileKey("entryUndoSnapshot"), null);
+  function saveRecentRefuel(refuel, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const workflow = getWorkflow(car.carId);
+    workflow.recentRefuel = refuel && typeof refuel === "object" ? refuel : null;
+    saveWorkflow(workflow, car.carId);
   }
 
-  function saveEntryUndoSnapshot(snapshot) {
-    saveJSON(profileKey("entryUndoSnapshot"), snapshot && typeof snapshot === "object" ? snapshot : null);
+  function getEntryUndoSnapshot(fuelId, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const fuel = normalizeFuel(fuelId || getActiveFuel(car.carId), car.carId);
+    return loadJSON(fuelKey("undoSnapshot", car.carId, fuel), null);
+  }
+
+  function saveEntryUndoSnapshot(snapshot, fuelId, carId) {
+    const car = carDefinition(carId || snapshot && snapshot.carId || activeCarId);
+    const fuel = normalizeFuel(fuelId || snapshot && (snapshot.fuelId || snapshot.fuel) || getActiveFuel(car.carId), car.carId);
+    const key = fuelKey("undoSnapshot", car.carId, fuel);
+    if (!snapshot) localStorage.removeItem(key);
+    else saveJSON(key, Object.assign({}, snapshot, { carId: car.carId, fuelId: fuel }));
   }
 
   function emptyFuelHint() {
@@ -303,85 +650,36 @@
     };
   }
 
-  function defaultHints() {
-    if (activeProfileId === PROFILE_CADDY || activeProfileId === PROFILE_AUDI) {
-      return {
-        discountPerLiter: 0.21,
-        latestOdometer: 0,
-        fuels: {
-          ON: emptyFuelHint()
-        }
-      };
-    }
-    if (activeProfileId === PROFILE_CLIO5) {
-      return {
-        discountPerLiter: 0.21,
-        latestOdometer: 47670,
-        fuels: {
-          LPG: Object.assign(emptyFuelHint(), {
-            suggestedPumpPrice: 2.89,
-            lastOdometer: 47670,
-            history: [{
-              odometer: 47670,
-              source: "initial"
-            }]
-          }),
-          E95: Object.assign(emptyFuelHint(), {
-            lastOdometer: 47670,
-            history: [{
-              odometer: 47670,
-              source: "initial"
-            }]
-          })
-        }
-      };
-    }
-    if (activeProfileId === PROFILE_HANIA) {
-      return {
-        discountPerLiter: 0.21,
-        latestOdometer: 162508,
-        fuels: {
-          E95: Object.assign(emptyFuelHint(), {
-            suggestedPumpPrice: 5.99,
-            lastPaidPrice: 5.78,
-            lastOdometer: 162508,
-            lastDate: "2026-06-19",
-            lastDateIso: "2026-06-19",
-            lastConsumption: 5.98,
-            history: [{
-              dateIso: "2026-06-19",
-              date: "2026-06-19",
-              odometer: 162508,
-              paidPrice: 5.78,
-              consumption: 5.98,
-              source: "initial"
-            }]
-          })
-        }
-      };
-    }
-    return {
-      discountPerLiter: 0.21,
-      latestOdometer: null,
-      fuels: {
-        LPG: emptyFuelHint(),
-        E98: emptyFuelHint()
+  function getHints(carId) {
+    const car = carDefinition(carId || activeCarId);
+    const hints = { discountPerLiter: 0.21, latestOdometer: null, fuels: {} };
+    car.fuels.forEach(function (fuel) {
+      const stored = loadJSON(fuelKey("history", car.carId, fuel), {});
+      hints.fuels[fuel] = Object.assign(emptyFuelHint(), stored);
+      if (stored.discountPerLiter !== undefined && stored.discountPerLiter !== null && stored.discountPerLiter !== "") {
+        hints.discountPerLiter = stored.discountPerLiter;
       }
-    };
+      const odometer = Number(hints.fuels[fuel].lastOdometer || 0);
+      if (odometer > Number(hints.latestOdometer || 0)) hints.latestOdometer = odometer;
+    });
+    return hints;
   }
 
-  function getHints() {
-    return Object.assign(defaultHints(), loadJSON(profileKey("hints"), {}));
-  }
-
-  function saveHints(hints) {
-    saveJSON(profileKey("hints"), hints);
+  function saveHints(hints, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const source = hints && typeof hints === "object" ? hints : {};
+    car.fuels.forEach(function (fuel) {
+      const value = Object.assign(emptyFuelHint(), source.fuels && source.fuels[fuel] || {}, {
+        discountPerLiter: source.discountPerLiter !== undefined ? source.discountPerLiter : 0.21
+      });
+      saveJSON(fuelKey("history", car.carId, fuel), value);
+    });
   }
 
   function defaultResults() {
     return {
       monthlyLabel: "",
-      monthlyAverage: activeProfileId === PROFILE_HANIA || activeProfileId === PROFILE_CLIO5 || activeProfileId === PROFILE_CADDY || activeProfileId === PROFILE_AUDI ? "0" : "",
+      monthlyAverage: "",
       lastLpgResult: "",
       lastReadAt: "",
       lastSyncAt: "",
@@ -389,27 +687,91 @@
     };
   }
 
-  function getResults() {
-    return Object.assign(defaultResults(), loadJSON(profileKey("results"), {}));
+  function getResults(fuelId, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const fuel = normalizeFuel(fuelId || getActiveFuel(car.carId), car.carId);
+    return Object.assign(defaultResults(), loadJSON(fuelKey("results", car.carId, fuel), {}));
   }
 
-  function saveResults(results) {
-    saveJSON(profileKey("results"), results);
+  function saveResults(results, fuelId, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const fuel = normalizeFuel(fuelId || getActiveFuel(car.carId), car.carId);
+    saveJSON(fuelKey("results", car.carId, fuel), Object.assign(defaultResults(), results || {}));
+  }
+
+  function saveSheetConfig(carId, config, requestId) {
+    const car = carDefinition(carId);
+    const responseCar = normalizeCarId(config && (config.carId || config.vehicleId || config.profileId));
+    if (!config || responseCar !== car.carId) throw new Error("Sheet response car does not match request.");
+    const incomingFuels = config.fuels && typeof config.fuels === "object" ? config.fuels : {};
+    car.fuels.forEach(function (fuel) {
+      const incoming = incomingFuels[fuel] && typeof incomingFuels[fuel] === "object" ? incomingFuels[fuel] : {};
+      const exactSnapshot = {
+        requestId: String(requestId || config.requestId || ""),
+        carId: car.carId,
+        profileId: car.profileId,
+        fuelId: fuel,
+        fetchedAt: String(config.readAt || new Date().toISOString()),
+        discountPerLiter: config.discountPerLiter !== undefined ? config.discountPerLiter : "",
+        fuel: incoming,
+        results: {
+          monthlyLabel: config.monthlyLabel !== undefined ? config.monthlyLabel : "",
+          monthlyAverage: config.monthlyAverage !== undefined ? config.monthlyAverage : "",
+          lastLpgResult: config.lastResult || config.lastLpgResult || "",
+          sheetTitle: config.sheetTitle || ""
+        }
+      };
+      saveJSON(fuelKey("sheetSnapshot", car.carId, fuel), exactSnapshot);
+      saveJSON(fuelKey("history", car.carId, fuel), Object.assign(emptyFuelHint(), incoming, {
+        discountPerLiter: exactSnapshot.discountPerLiter
+      }));
+      const previousResults = getResults(fuel, car.carId);
+      saveResults({
+        monthlyLabel: exactSnapshot.results.monthlyLabel,
+        monthlyAverage: exactSnapshot.results.monthlyAverage,
+        lastLpgResult: exactSnapshot.results.lastLpgResult,
+        lastReadAt: new Date().toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }),
+        lastSyncAt: previousResults.lastSyncAt || "",
+        sheetTitle: exactSnapshot.results.sheetTitle
+      }, fuel, car.carId);
+    });
+    return true;
+  }
+
+  function getSheetSnapshot(fuelId, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const fuel = normalizeFuel(fuelId || getActiveFuel(car.carId), car.carId);
+    return loadJSON(fuelKey("sheetSnapshot", car.carId, fuel), null);
+  }
+
+  function getMigrationDiagnostics() {
+    return {
+      migration: loadJSON(DEVICE_KEYS.migration, null),
+      quarantine: loadJSON(DEVICE_KEYS.quarantine, [])
+    };
   }
 
   window.TankowanieStorage = {
     APP_VERSION,
     API_VERSION,
+    CARS,
     createId,
+    normalizeCarId,
+    profileIdForCar,
+    getCarDefinition: carDefinition,
     getDeviceId,
     getSettings,
     saveSettings,
     getActiveUser,
     setActiveUser,
     getVehiclesForUser,
-    getActiveProfile,
-    setActiveProfile,
+    getActiveCar,
+    setActiveCar,
+    getActiveProfile: getActiveCar,
+    setActiveProfile: setActiveCar,
     getProfiles,
+    getActiveFuel,
+    setActiveFuel,
     getDraft,
     saveDraft,
     getQueue,
@@ -418,6 +780,7 @@
     saveReceiptScans,
     getPendingScan,
     savePendingScan,
+    clearPendingScan,
     getLastSummary,
     saveLastSummary,
     getRecentRefuel,
@@ -427,6 +790,9 @@
     getHints,
     saveHints,
     getResults,
-    saveResults
+    saveResults,
+    saveSheetConfig,
+    getSheetSnapshot,
+    getMigrationDiagnostics
   };
 })();

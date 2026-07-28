@@ -9,6 +9,9 @@
   const PROFILES = {
     BG: {
       id: "BG",
+      carId: "BG",
+      profileId: "BG",
+      allowedUsers: ["BG"],
       label: "BG",
       switchLabel: "Auto",
       tileColor: "#2563eb",
@@ -22,8 +25,11 @@
       footerImage: "grafiki/Orlen-flota.jpg",
       staticFuelLabel: ""
     },
-    HANIA_CLIO3: {
-      id: "HANIA_CLIO3",
+    CLIO3: {
+      id: "CLIO3",
+      carId: "CLIO3",
+      profileId: "HANIA_CLIO3",
+      allowedUsers: ["BG", "HANIA", "MICHAL", "MAJA"],
       label: "Clio3",
       switchLabel: "Auto",
       tileColor: "#db2777",
@@ -37,8 +43,11 @@
       footerImage: "grafiki/Orlen-flota.jpg",
       staticFuelLabel: "E95"
     },
-    CLIO5_IWONA: {
-      id: "CLIO5_IWONA",
+    CLIO5: {
+      id: "CLIO5",
+      carId: "CLIO5",
+      profileId: "CLIO5_IWONA",
+      allowedUsers: ["BG", "IWONA", "HANIA"],
       label: "Clio5-Iwona",
       switchLabel: "Auto",
       tileColor: "#7c3aed",
@@ -54,6 +63,9 @@
     },
     E_LS995_VW_CADDY: {
       id: "E_LS995_VW_CADDY",
+      carId: "E_LS995_VW_CADDY",
+      profileId: "E_LS995_VW_CADDY",
+      allowedUsers: ["BG", "GOSIA", "GRZESIU"],
       label: "E-LS995 _VW_CADDY",
       switchLabel: "Auto",
       tileColor: "#16a34a",
@@ -70,6 +82,9 @@
     },
     OK2071C_AUDI: {
       id: "OK2071C_AUDI",
+      carId: "OK2071C_AUDI",
+      profileId: "OK2071C_AUDI",
+      allowedUsers: ["BG", "GOSIA", "GRZESIU"],
       label: "OK2071C _AUDI",
       switchLabel: "Auto",
       tileColor: "#ca8a04",
@@ -98,7 +113,7 @@
   let chooserUserId = "";
   const ROMAN_MONTHS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
   let activeUserId = storage.getActiveUser();
-  let activeProfileId = storage.getActiveProfile();
+  let activeProfileId = storage.getActiveCar();
   let settings = storage.getSettings();
   let draft = storage.getDraft();
   let queue = storage.getQueue();
@@ -111,7 +126,7 @@
   const pageSessionId = storage.createId("session");
   const pageStartedAt = Date.now();
   let recentLpgReceiptContext = null;
-  let activeEdit = "odometer";
+  let activeEdit = draft.activeEdit || "odometer";
   let keypadReady = false;
   let busyAction = "";
   let userAdjustedDate = false;
@@ -123,6 +138,8 @@
   let receiptActionPointerActive = false;
   let receiptActionLongDone = false;
   let suppressReceiptActionClickUntil = 0;
+  let configRequestSequence = 0;
+  const latestConfigRequestByCar = {};
 
   function $(id) {
     return document.getElementById(id);
@@ -132,25 +149,13 @@
     return PROFILES[activeProfileId] || PROFILES.BG;
   }
 
-  function isClio5Profile(profileId) {
-    return profileId === "CLIO5_IWONA";
-  }
-
-  function isAllowedClio5User(userId) {
-    return ["IWONA", "BG", "HANIA"].indexOf(String(userId || "").toUpperCase()) !== -1;
-  }
-
   function isOnProfile(profileId) {
     return profileId === "E_LS995_VW_CADDY" || profileId === "OK2071C_AUDI";
   }
 
-  function isAllowedOnUser(userId) {
-    return ["BG", "GOSIA", "GRZESIU"].indexOf(String(userId || "").toUpperCase()) !== -1;
-  }
-
   function userTile(userId) {
     return USER_TILES.find(function (tile) {
-      return tile.id === userId || (tile.id === "MICHAL" && userId === "MICHAŁ");
+      return tile.id === userId;
     }) || USER_TILES[0];
   }
 
@@ -261,10 +266,12 @@
     const today = todayIso();
     if (!draft.date) {
       draft.date = today;
+      draft.userAdjustedDate = false;
       return true;
     }
     if (isRefuelDraftEmpty() && !userAdjustedDate && draft.date !== today) {
       draft.date = today;
+      draft.userAdjustedDate = false;
       return true;
     }
     return false;
@@ -578,6 +585,8 @@
       active: true,
       reason: String(reason || "entry"),
       createdAt: new Date().toISOString(),
+      carId: activeProfileId,
+      fuelId: draft.fuel,
       draft: cloneState(draft),
       activeEdit,
       lastSummary: cloneState(lastSummary),
@@ -601,14 +610,28 @@
       toast("Brak lokalnego stanu do cofnięcia.");
       return;
     }
-    draft = Object.assign(storage.getDraft(), cloneState(entryUndoSnapshot.draft) || {});
+    if (entryUndoSnapshot.carId && entryUndoSnapshot.carId !== activeProfileId) {
+      toast("Stan cofania należy do innego auta.");
+      return;
+    }
+    if (entryUndoSnapshot.fuelId && entryUndoSnapshot.fuelId !== draft.fuel) {
+      toast("Stan cofania należy do innego paliwa.");
+      return;
+    }
+    draft = Object.assign(storage.getDraft(draft.fuel), cloneState(entryUndoSnapshot.draft) || {});
     lastSummary = normalizeLastSummaries(cloneState(entryUndoSnapshot.lastSummary));
+    const pendingBeforeUndo = pendingScan;
     pendingScan = migratePendingScan(cloneState(entryUndoSnapshot.pendingScan), []);
+    if (pendingBeforeUndo && (!pendingScan || pendingScan.entryId !== pendingBeforeUndo.entryId)) {
+      storage.clearPendingScan(pendingBeforeUndo.carId, pendingBeforeUndo.fuel, pendingBeforeUndo.entryId);
+    }
+    if (pendingScan) storage.savePendingScan(pendingScan);
     hints = normalizeHints(cloneState(entryUndoSnapshot.hints));
     results = Object.assign(storage.getResults(), cloneState(entryUndoSnapshot.results) || {});
     recentRefuel = normalizeRecentRefuel(cloneState(entryUndoSnapshot.recentRefuel));
     recentLpgReceiptContext = cloneState(entryUndoSnapshot.recentLpgReceiptContext) || null;
     userAdjustedDate = !!entryUndoSnapshot.userAdjustedDate;
+    draft.userAdjustedDate = userAdjustedDate;
     const restoredActiveEdit = entryUndoSnapshot.activeEdit || "odometer";
     clearEntryUndoSnapshot();
     saveAll();
@@ -755,13 +778,6 @@
     };
   }
 
-  function hasMissingPreviousData() {
-    return activeFuels().some(function (fuel) {
-      const fuelHint = hints.fuels[fuel] || {};
-      return !previousOdometerForFuel(fuel) || !parseDecimal(fuelHint.lastConsumption);
-    });
-  }
-
   function currentSettings(options) {
     const stored = storage.getSettings();
     const endpointFromInput = els.endpointInput ? els.endpointInput.value.trim() : "";
@@ -769,7 +785,8 @@
     settings = {
       endpointUrl: endpointFromInput || stored.endpointUrl || "",
       pin: pinFromInput || stored.pin || "",
-      profileId: activeProfileId,
+      profileId: activeProfile().profileId,
+      carId: activeProfileId,
       vehicleId: activeProfileId,
       userId: activeUserId
     };
@@ -786,42 +803,51 @@
 
   function saveAll() {
     storage.saveSettings(settings);
-    storage.saveDraft(draft);
+    draft = storage.saveDraft(draft);
     storage.saveQueue(queue);
-    storage.savePendingScan(pendingScan);
-    storage.saveReceiptScans(pendingScan ? [pendingScan] : []);
+    if (pendingScan) storage.savePendingScan(pendingScan);
     storage.saveLastSummary(lastSummary);
     storage.saveRecentRefuel(recentRefuel);
-    storage.saveEntryUndoSnapshot(entryUndoSnapshot);
+    storage.saveEntryUndoSnapshot(entryUndoSnapshot, draft.fuel);
     storage.saveHints(hints);
-    storage.saveResults(results);
+    storage.saveResults(results, draft.fuel);
   }
 
   function reloadProfileState(profileId, options) {
     if (options && options.saveCurrent) saveAll();
     if (options && options.userId) activeUserId = storage.setActiveUser(options.userId);
     else activeUserId = storage.getActiveUser();
-    activeProfileId = storage.setActiveProfile(profileId);
+    activeProfileId = storage.setActiveCar(profileId);
     settings = storage.getSettings();
     draft = storage.getDraft();
     queue = storage.getQueue();
     pendingScan = migratePendingScan(storage.getPendingScan(), storage.getReceiptScans());
-    storage.savePendingScan(pendingScan);
-    storage.saveReceiptScans(pendingScan ? [pendingScan] : []);
+    if (pendingScan) storage.savePendingScan(pendingScan);
     lastSummary = normalizeLastSummaries(storage.getLastSummary());
     hints = normalizeHints(storage.getHints());
-    results = storage.getResults();
+    results = storage.getResults(draft.fuel);
+    overlayQueuedHints();
+    storage.saveHints(hints);
     recentRefuel = normalizeRecentRefuel(storage.getRecentRefuel());
-    entryUndoSnapshot = normalizeEntryUndoSnapshot(storage.getEntryUndoSnapshot());
+    entryUndoSnapshot = normalizeEntryUndoSnapshot(storage.getEntryUndoSnapshot(draft.fuel));
     recentLpgReceiptContext = null;
     receiptPromptEntryId = "";
-    userAdjustedDate = false;
+    userAdjustedDate = draft.userAdjustedDate === true;
+    activeEdit = draft.activeEdit || "odometer";
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
     if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
     ensureDefaultDateForEmptyDraft();
     if (els.receiptDialog) els.receiptDialog.hidden = true;
-    setActiveEdit("odometer");
-    maybeAutoRefreshConfig();
+    setActiveEdit(activeEdit);
+    maybeAutoRefreshConfig({ force: true });
+  }
+
+  function vehicleTileHeight(count) {
+    const viewportHeight = window.visualViewport && window.visualViewport.height
+      ? window.visualViewport.height
+      : window.innerHeight;
+    const safeSpacing = 48 + Math.max(0, count - 1) * 8;
+    return Math.max(58, Math.min(92, Math.floor((viewportHeight - safeSpacing) / Math.max(1, count))));
   }
 
   function renderProfileChooser() {
@@ -840,12 +866,20 @@
       : USER_TILES.map(function (tile) {
         return Object.assign({ kind: "user" }, tile);
       });
+    els.profileTiles.classList.toggle("is-vehicle-mode", chooserMode === "vehicle");
+    els.profileTiles.style.setProperty("--vehicle-count", String(Math.max(1, tiles.length)));
+    if (chooserMode === "vehicle") {
+      els.profileTiles.style.setProperty("--vehicle-tile-height", `${vehicleTileHeight(tiles.length)}px`);
+    } else {
+      els.profileTiles.style.removeProperty("--vehicle-tile-height");
+    }
     els.profileTiles.innerHTML = tiles.map(function (tile) {
       const activeClass = tile.active ? "is-active" : "is-disabled";
+      const kindClass = tile.kind === "vehicle" ? "profile-vehicle-tile" : "profile-user-tile";
       const state = tile.active ? "" : '<span class="profile-tile-state">później</span>';
       const attr = tile.kind === "vehicle" ? "data-vehicle-id" : "data-user-id";
       return `
-        <button type="button" class="profile-tile ${activeClass}" ${attr}="${tile.id}" style="--tile-color: ${tile.color}">
+        <button type="button" class="profile-tile ${kindClass} ${activeClass}" ${attr}="${tile.id}" style="--tile-color: ${tile.color}">
           <strong>${tile.label}</strong>
           ${state}
         </button>
@@ -890,17 +924,6 @@
 
   function switchProfileFromFooter() {
     showProfileChooser();
-  }
-
-  function mergeMeaningful(target, source) {
-    const result = Object.assign({}, target || {});
-    Object.keys(source || {}).forEach(function (key) {
-      const value = source[key];
-      if (value !== null && value !== undefined && value !== "") {
-        result[key] = value;
-      }
-    });
-    return result;
   }
 
   function toast(message) {
@@ -995,7 +1018,8 @@
       { action: "save", element: els.saveButton },
       { action: "sync", element: els.syncButton },
       { action: "scan", element: els.saveButton },
-      { action: "data", element: els.refreshButton }
+      { action: "data", element: els.refreshButton },
+      { action: "", element: els.profileSwitchButton }
     ].forEach(function (item) {
       if (!item.element) return;
       item.element.classList.toggle("action-busy", busyAction === item.action);
@@ -1063,6 +1087,8 @@
 
   function setActiveEdit(field, shouldScroll) {
     activeEdit = field === "price" || field === "liters" || field === "discount" ? field : "odometer";
+    draft.activeEdit = activeEdit;
+    draft = storage.saveDraft(draft);
     configureKeypad();
     render();
     if (shouldScroll) keepActiveFieldVisible();
@@ -1311,35 +1337,108 @@
     els.saveButton.setAttribute("aria-label", "Zapisz lub wyślij");
   }
 
-  function applyConfig(config) {
-    const sheetDiscount = parseDecimal(config.discountPerLiter);
-    const previousDiscount = parseDecimal(hints.discountPerLiter);
-    hints.discountPerLiter = sheetDiscount !== null && sheetDiscount >= 0
-      ? sheetDiscount
-      : previousDiscount !== null && previousDiscount >= 0 ? previousDiscount : 0.21;
-    hints.latestOdometer = config.latestOdometer || hints.latestOdometer || null;
-    const incomingFuels = config.fuels || {};
-    activeFuels().forEach(function (fuel) {
-      const existing = normalizeFuelHint(hints.fuels[fuel]);
-      const incoming = normalizeFuelHint(incomingFuels[fuel]);
-      const merged = mergeMeaningful(existing, incomingFuels[fuel]);
-      merged.history = upsertHistory(existing.history, incoming.history);
-      hints.fuels[fuel] = normalizeFuelHint(merged);
+  function configRequestContext() {
+    const profile = activeProfile();
+    const requestId = storage.createId("config");
+    return {
+      requestId,
+      sequence: ++configRequestSequence,
+      carId: activeProfileId,
+      vehicleId: activeProfileId,
+      profileId: profile.profileId,
+      fuelId: draft.fuel,
+      userId: activeUserId
+    };
+  }
+
+  function configMatchesContext(config, context) {
+    if (!config || !context) return false;
+    const responseCar = storage.normalizeCarId(config.carId || config.vehicleId || config.profileId);
+    if (responseCar !== context.carId) return false;
+    if (config.profileId && String(config.profileId) !== String(context.profileId)) return false;
+    if (config.requestId && String(config.requestId) !== String(context.requestId)) return false;
+    if (config.requestedFuelId && context.fuelId && String(config.requestedFuelId) !== String(context.fuelId)) return false;
+    return true;
+  }
+
+  function historyContainsQueuedEntry(history, entry) {
+    return (Array.isArray(history) ? history : []).some(function (item) {
+      return normalizeDateIso(item.dateIso || item.date) === normalizeDateIso(entry.refuelDate)
+        && Number(item.odometer || 0) === Number(entry.odometer || 0)
+        && Math.abs(Number(item.liters || 0) - Number(entry.liters || 0)) < 0.005;
     });
-    hints.fuels = normalizeHints({ fuels: hints.fuels }).fuels;
-    results.monthlyLabel = config.monthlyLabel || results.monthlyLabel || "";
-    results.monthlyAverage = config.monthlyAverage || results.monthlyAverage || "";
-    results.lastLpgResult = config.lastResult || config.lastLpgResult || results.lastLpgResult || "";
-    results.lastReadAt = new Date().toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
-    results.sheetTitle = config.sheetTitle || results.sheetTitle || "";
-    saveAll();
+  }
+
+  function overlayQueuedHints() {
+    activeFuels().forEach(function (fuel) {
+      const fuelHint = normalizeFuelHint(hints.fuels[fuel]);
+      queue.filter(function (entry) {
+        return entry && entry.fuel === fuel && storage.normalizeCarId(entry.carId || entry.vehicleId || entry.profileId) === activeProfileId;
+      }).sort(function (a, b) {
+        return Number(a.odometer || 0) - Number(b.odometer || 0);
+      }).forEach(function (entry) {
+        if (historyContainsQueuedEntry(fuelHint.history, entry)) return;
+        const previous = numberOrNull(fuelHint.lastOdometer);
+        const current = numberOrNull(entry.odometer);
+        const liters = parseDecimal(entry.liters);
+        const distance = previous && current && current > previous ? Math.trunc(current - previous) : null;
+        const consumption = distance && liters ? Number(((liters / distance) * 100).toFixed(2)) : null;
+        fuelHint.suggestedPumpPrice = entry.pumpPrice;
+        fuelHint.lastPaidPrice = entry.discountedPrice;
+        fuelHint.lastOdometer = entry.odometer;
+        fuelHint.lastLiters = entry.liters;
+        fuelHint.lastDate = entry.refuelDate;
+        fuelHint.lastDateIso = entry.refuelDate;
+        fuelHint.previousOdometer = previous;
+        fuelHint.lastDistance = distance;
+        fuelHint.lastConsumption = consumption;
+        fuelHint.provisional = true;
+        fuelHint.history = upsertHistory(fuelHint.history, {
+          entryId: entry.entryId,
+          dateIso: entry.refuelDate,
+          date: entry.refuelDate,
+          odometer: entry.odometer,
+          liters: entry.liters,
+          paidPrice: entry.discountedPrice,
+          previousOdometer: previous,
+          distance,
+          consumption,
+          source: "local"
+        });
+      });
+      hints.fuels[fuel] = normalizeFuelHint(fuelHint);
+    });
+    hints.latestOdometer = activeFuels().reduce(function (latest, fuel) {
+      return Math.max(latest, Number(hints.fuels[fuel] && hints.fuels[fuel].lastOdometer || 0));
+    }, 0) || null;
+  }
+
+  function applyConfig(config, context) {
+    const requestContext = context || {
+      requestId: config && config.requestId || "",
+      carId: storage.normalizeCarId(config && (config.carId || config.vehicleId || config.profileId)),
+      profileId: config && config.profileId || ""
+    };
+    if (!configMatchesContext(config, requestContext)) throw new Error("Odpowiedź Arkusza dotyczy innego auta.");
+    if (requestContext.requestId && latestConfigRequestByCar[requestContext.carId]
+      && latestConfigRequestByCar[requestContext.carId] !== requestContext.requestId) return false;
+    storage.saveSheetConfig(requestContext.carId, config, requestContext.requestId);
+    if (requestContext.carId !== activeProfileId) return false;
+
+    hints = normalizeHints(storage.getHints());
+    results = storage.getResults(draft.fuel);
+    overlayQueuedHints();
+    storage.saveHints(hints);
     configureKeypad();
     render();
+    return true;
   }
 
   async function refreshConfig(options) {
-    const silent = options && options.silent;
-    const syncSettings = currentSettings({ persist: true });
+    const silent = !!(options && options.silent);
+    const context = options && options.context ? options.context : configRequestContext();
+    latestConfigRequestByCar[context.carId] = context.requestId;
+    const syncSettings = Object.assign({}, currentSettings({ persist: true }), context);
     const missing = missingSettingsMessage(syncSettings);
     if (missing) {
       if (!silent) {
@@ -1348,26 +1447,29 @@
       }
       return null;
     }
-    setBusy("data");
+    if (!silent) setBusy("data");
     try {
-      const config = await sync.getConfig(syncSettings);
-      applyConfig(config);
-      if (!silent) toast("Dane pobrane z arkusza.");
+      const config = await sync.getConfig(syncSettings, context);
+      if (latestConfigRequestByCar[context.carId] !== context.requestId) return null;
+      const applied = applyConfig(config, context);
+      if (!silent && applied) toast("Dane pobrane z arkusza.");
       return config;
     } finally {
-      setBusy("");
+      if (!silent) setBusy("");
     }
   }
 
-  async function verifySyncReady(syncSettings) {
-    const config = await sync.getConfig(syncSettings);
+  async function verifySyncReady(syncSettings, context) {
+    const config = await sync.getConfig(syncSettings, context || configRequestContext());
+    if (context && !configMatchesContext(config, context)) {
+      throw new Error("Odpowiedź Arkusza dotyczy innego auta.");
+    }
     return config;
   }
 
   function maybeAutoRefreshConfig() {
     const syncSettings = currentSettings();
     if (!syncSettings.endpointUrl || !syncSettings.pin || !navigator.onLine) return;
-    if (!hasMissingPreviousData()) return;
     refreshConfig({ silent: true }).catch(function () {});
   }
 
@@ -1378,12 +1480,8 @@
     const date = normalizeDateIso(els.refuelDate.value || draft.date) || todayIso();
     const paid = paidPrice();
     const discount = effectiveDiscount();
-    if (isOnProfile(activeProfileId) && !isAllowedOnUser(activeUserId)) {
-      throw new Error("Ten uzytkownik nie ma dostepu do tego auta.");
-    }
-
-    if (isClio5Profile(activeProfileId) && !isAllowedClio5User(activeUserId)) {
-      throw new Error("Ten użytkownik nie ma dostępu do Clio5-Iwona.");
+    if (activeProfile().allowedUsers.indexOf(activeUserId) === -1) {
+      throw new Error("Ten użytkownik nie ma dostępu do tego auta.");
     }
     if (!Number.isInteger(odometer) || odometer <= 0) throw new Error("Uzupełnij licznik.");
     if (!Number.isFinite(liters) || liters <= 0) throw new Error("Uzupełnij ilość paliwa.");
@@ -1392,8 +1490,9 @@
     if (paid === null || paid <= 0) throw new Error("Cena po rabacie jest nieprawidłowa.");
 
     return {
-      entryId: storage.createId("entry"),
+      entryId: String(draft.entryId || storage.createId("entry")),
       fuel: draft.fuel,
+      fuelId: draft.fuel,
       odometer,
       liters: Number(liters.toFixed(2)),
       pumpPrice: Number(price.toFixed(2)),
@@ -1402,9 +1501,10 @@
       refuelDate: date,
       createdAt: new Date().toISOString(),
       deviceId: storage.getDeviceId(),
-      profileId: activeProfileId,
+      profileId: activeProfile().profileId,
+      carId: activeProfileId,
       vehicleId: activeProfileId,
-      userId: activeUserId,
+      userId: draft.startedByUserId || activeUserId,
       appVersion: storage.APP_VERSION
     };
   }
@@ -1442,19 +1542,28 @@
   }
 
   function clearEntryDraft() {
+    draft.entryId = "";
+    draft.startedByUserId = "";
     draft.odometer = null;
     draft.pumpPrice = null;
     draft.discountPerLiter = null;
     draft.discountPerLiterEdited = false;
     draft.liters = "";
     draft.date = todayIso();
+    draft.activeEdit = "odometer";
+    draft.userAdjustedDate = false;
     userAdjustedDate = false;
   }
 
   function clearRefuelInputDraft() {
+    draft.entryId = "";
+    draft.startedByUserId = "";
     draft.odometer = null;
     draft.pumpPrice = null;
     draft.liters = "";
+    draft.activeEdit = "odometer";
+    draft.userAdjustedDate = false;
+    userAdjustedDate = false;
     saveAll();
     setActiveEdit("odometer");
     toast("Pola tankowania wyczyszczone.");
@@ -1462,12 +1571,15 @@
 
   function normalizeReceiptRecord(record) {
     const source = record && typeof record === "object" ? record : {};
-    const fuel = normalizeFuelId(source.fuel, primaryFuel());
+    const carId = storage.normalizeCarId(source.carId || source.vehicleId || source.profileId) || activeProfileId;
+    const fuel = normalizeFuelId(source.fuelId || source.fuel, primaryFuel());
     return {
       entryId: String(source.entryId || ""),
-      profileId: String(source.profileId || activeProfileId),
-      vehicleId: String(source.vehicleId || source.profileId || activeProfileId),
+      profileId: String(source.profileId || storage.profileIdForCar(carId)),
+      carId,
+      vehicleId: carId,
       userId: String(source.userId || activeUserId),
+      fuelId: fuel,
       fuel: isFuelAvailable(fuel) ? fuel : primaryFuel(),
       row: source.row ? Number(source.row) : "",
       refuelDate: normalizeDateIso(source.refuelDate || source.date) || "",
@@ -1533,7 +1645,10 @@
 
   function clearPendingScan(entryId) {
     if (entryId && (!pendingScan || pendingScan.entryId !== entryId)) return;
+    const cleared = pendingScan;
     pendingScan = null;
+    if (cleared) storage.clearPendingScan(cleared.carId, cleared.fuel, cleared.entryId);
+    pendingScan = migratePendingScan(storage.getPendingScan(), storage.getReceiptScans());
     if (receiptPromptEntryId && (!entryId || receiptPromptEntryId === entryId)) receiptPromptEntryId = "";
   }
 
@@ -1560,12 +1675,29 @@
     return Date.now() - context.savedAt <= 60 * 60 * 1000;
   }
 
+  function loadFuelState(targetFuel) {
+    storage.setActiveFuel(targetFuel);
+    draft = storage.getDraft(targetFuel);
+    results = storage.getResults(targetFuel);
+    entryUndoSnapshot = normalizeEntryUndoSnapshot(storage.getEntryUndoSnapshot(targetFuel));
+    activeEdit = draft.activeEdit || "odometer";
+    userAdjustedDate = draft.userAdjustedDate === true;
+    if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
+    if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
+    ensureDefaultDateForEmptyDraft();
+  }
+
   function applyFastSecondFuel(targetFuel) {
     if (!activeProfile().supportsFastSecondFuel) return false;
     if (!isRefuelDraftEmpty()) return false;
     if (!isRecentOtherFuelRefuel(targetFuel)) return false;
+    draft = storage.saveDraft(draft);
+    loadFuelState(targetFuel);
+    if (!isRefuelDraftEmpty()) {
+      setActiveEdit(activeEdit);
+      return true;
+    }
     captureEntryUndoSnapshot("fast-second-fuel", true);
-    draft.fuel = targetFuel;
     draft.odometer = Number(recentRefuel.odometer);
     draft.pumpPrice = null;
     draft.discountPerLiter = null;
@@ -1603,8 +1735,8 @@
 
   function shouldTrackReceiptForEntry(entry) {
     if (!entry) return false;
-    if (activeProfileId === "CLIO5_IWONA") return entry.fuel === "LPG" || entry.fuel === "E95";
-    if (activeProfileId === "HANIA_CLIO3") return entry.fuel === "E95";
+    if (activeProfileId === "CLIO5") return entry.fuel === "LPG" || entry.fuel === "E95";
+    if (activeProfileId === "CLIO3") return entry.fuel === "E95";
     if (isOnProfile(activeProfileId)) return entry.fuel === "ON";
     if (entry.fuel === "LPG") return true;
     if (entry.fuel === "E98") return !isCombinedE98WithCurrentLpg(entry);
@@ -1616,9 +1748,11 @@
     const existing = findReceiptScan(entry.entryId) || {};
     const record = upsertReceiptScan(Object.assign(existing, {
       entryId: entry.entryId,
-      profileId: activeProfileId,
+      profileId: activeProfile().profileId,
+      carId: activeProfileId,
       vehicleId: activeProfileId,
-      userId: activeUserId,
+      userId: entry.userId || activeUserId,
+      fuelId: entry.fuel,
       fuel: entry.fuel,
       row: receipt && receipt.row ? Number(receipt.row) : existing.row || "",
       refuelDate: entry.refuelDate,
@@ -1856,9 +1990,11 @@
     try {
       const receipt = await sync.uploadReceiptScan(syncSettings, {
         entryId: currentRecord.entryId,
-        profileId: currentRecord.profileId || activeProfileId,
-        vehicleId: currentRecord.vehicleId || currentRecord.profileId || activeProfileId,
+        profileId: currentRecord.profileId || activeProfile().profileId,
+        carId: currentRecord.carId || activeProfileId,
+        vehicleId: currentRecord.carId || currentRecord.vehicleId || activeProfileId,
         userId: currentRecord.userId || activeUserId,
+        fuelId: currentRecord.fuel,
         fuel: currentRecord.fuel,
         row: currentRecord.row,
         refuelDate: currentRecord.refuelDate,
@@ -1949,6 +2085,15 @@
     try {
       draft.date = els.refuelDate.value || todayIso();
       const entry = buildEntry();
+      const entryContext = {
+        requestId: storage.createId("config"),
+        carId: entry.carId,
+        vehicleId: entry.carId,
+        profileId: entry.profileId,
+        fuelId: entry.fuel,
+        userId: entry.userId
+      };
+      latestConfigRequestByCar[entry.carId] = entryContext.requestId;
       const summary = buildLastSummary(entry);
       rememberEntryHints(entry);
       setLastSummary(summary);
@@ -1957,7 +2102,7 @@
       const trackReceipt = shouldTrackReceiptForEntry(entry);
       if (trackReceipt) registerReceiptCandidate(entry, null, false);
       if (missing || !navigator.onLine) {
-        queue.push(entry);
+        if (!queue.some(function (item) { return item.entryId === entry.entryId; })) queue.push(entry);
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
@@ -1969,14 +2114,16 @@
       try {
         setBusy("save");
         if (trackReceipt) showReceiptDecision(entry.entryId);
-        await verifySyncReady(syncSettings);
+        const readyConfig = await verifySyncReady(Object.assign({}, syncSettings, entryContext), entryContext);
+        applyConfig(readyConfig, entryContext);
         const receipt = await sync.submitEntry(syncSettings, entry);
         savedReceipt = receipt;
-        applyReceipt(receipt);
+        applyReceipt(receipt, entryContext);
         if (trackReceipt) registerReceiptCandidate(entry, savedReceipt, false);
         await tryUploadReceiptScansForReceipt(receipt, syncSettings);
       } catch (syncError) {
-        queue.push(entry);
+        if (!queue.some(function (item) { return item.entryId === entry.entryId; })) queue.push(entry);
+        overlayQueuedHints();
         clearEntryDraft();
         saveAll();
         setActiveEdit("odometer");
@@ -1996,8 +2143,15 @@
     }
   }
 
-  function applyReceipt(receipt) {
-    if (receipt && receipt.config) applyConfig(receipt.config);
+  function applyReceipt(receipt, context) {
+    const receiptCar = storage.normalizeCarId(receipt && (receipt.carId || receipt.vehicleId || receipt.profileId));
+    const requestContext = context || {
+      requestId: receipt && receipt.config && receipt.config.requestId || "",
+      carId: receiptCar,
+      profileId: receipt && receipt.profileId || storage.profileIdForCar(receiptCar)
+    };
+    if (receipt && receipt.config) applyConfig(receipt.config, requestContext);
+    if (requestContext.carId !== activeProfileId) return;
     results.lastSyncAt = new Date().toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit" });
     if (receipt && receipt.row) {
       if (receipt.fuel && receipt.postResult && hints.fuels[receipt.fuel]) {
@@ -2030,9 +2184,11 @@
       return;
     }
     setBusy("sync");
+    const queueContext = configRequestContext();
+    latestConfigRequestByCar[queueContext.carId] = queueContext.requestId;
     try {
-      const config = await verifySyncReady(syncSettings);
-      applyConfig(config);
+      const config = await verifySyncReady(Object.assign({}, syncSettings, queueContext), queueContext);
+      applyConfig(config, queueContext);
     } catch (error) {
       toast(friendlySyncError(error));
       setBusy("");
@@ -2043,8 +2199,19 @@
     for (let index = 0; index < queue.length; index += 1) {
       const entry = queue[index];
       try {
-        const receipt = await sync.submitEntry(syncSettings, entry);
-        applyReceipt(receipt);
+        const entrySettings = Object.assign({}, syncSettings, {
+          profileId: entry.profileId || activeProfile().profileId,
+          carId: entry.carId || entry.vehicleId || activeProfileId,
+          vehicleId: entry.carId || entry.vehicleId || activeProfileId,
+          userId: entry.userId || activeUserId
+        });
+        const receipt = await sync.submitEntry(entrySettings, entry);
+        applyReceipt(receipt, {
+          requestId: queueContext.requestId,
+          carId: storage.normalizeCarId(entry.carId || entry.vehicleId || entry.profileId),
+          profileId: entry.profileId || activeProfile().profileId,
+          fuelId: entry.fuel
+        });
         await tryUploadReceiptScansForReceipt(receipt, syncSettings);
         sent += 1;
       } catch (error) {
@@ -2103,8 +2270,14 @@
   }
 
   function bindEvents() {
-    window.addEventListener("online", updateOnlineState);
+    window.addEventListener("online", function () {
+      updateOnlineState();
+      maybeAutoRefreshConfig();
+    });
     window.addEventListener("offline", updateOnlineState);
+    window.addEventListener("resize", function () {
+      if (els.profileChooser && !els.profileChooser.hidden && chooserMode === "vehicle") renderProfileChooser();
+    });
 
     els.inlineKeypad.addEventListener("click", function (event) {
       const keyButton = event.target && event.target.closest ? event.target.closest("[data-key]") : null;
@@ -2121,9 +2294,10 @@
       playSound("other");
       const targetFuel = nextFuel(draft.fuel);
       if (applyFastSecondFuel(targetFuel)) return;
-      draft.fuel = targetFuel;
+      draft = storage.saveDraft(draft);
+      loadFuelState(targetFuel);
       saveAll();
-      setActiveEdit("odometer");
+      setActiveEdit(activeEdit);
     });
 
     els.dateButton.addEventListener("click", function () {
@@ -2141,6 +2315,7 @@
     els.refuelDate.addEventListener("change", function () {
       userAdjustedDate = true;
       draft.date = els.refuelDate.value;
+      draft.userAdjustedDate = true;
       saveAll();
       render();
     });
@@ -2339,11 +2514,14 @@
   function init() {
     cacheElements();
     pendingScan = migratePendingScan(storage.getPendingScan(), storage.getReceiptScans());
-    storage.savePendingScan(pendingScan);
-    storage.saveReceiptScans(pendingScan ? [pendingScan] : []);
+    if (pendingScan) storage.savePendingScan(pendingScan);
     ensureDefaultDateForEmptyDraft();
+    userAdjustedDate = draft.userAdjustedDate === true;
+    activeEdit = draft.activeEdit || "odometer";
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
     if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
+    overlayQueuedHints();
+    storage.saveHints(hints);
     keypad.init({
       root: els.inlineKeypad,
       onChange: applyKeypadValue,
@@ -2354,7 +2532,7 @@
     });
     keypadReady = true;
     bindEvents();
-    setActiveEdit("odometer");
+    setActiveEdit(activeEdit);
     showProfileChooser();
     registerServiceWorker();
     window.setTimeout(maybeAutoRefreshConfig, 300);

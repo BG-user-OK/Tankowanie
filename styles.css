@@ -81,6 +81,11 @@ button,
   gap: 8px;
 }
 
+.profile-tiles.is-vehicle-mode {
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: var(--vehicle-tile-height, 72px);
+}
+
 .profile-tile {
   aspect-ratio: 1;
   width: 100%;
@@ -95,6 +100,16 @@ button,
   font-size: clamp(24px, 10vw, 44px);
   font-weight: 950;
   text-align: center;
+}
+
+.profile-vehicle-tile {
+  width: 100%;
+  height: var(--vehicle-tile-height, 72px);
+  min-height: 58px;
+  aspect-ratio: auto;
+  padding: 8px 14px;
+  font-size: 24px;
+  line-height: 1.05;
 }
 
 .profile-tile.is-disabled {

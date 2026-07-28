@@ -55,13 +55,17 @@
     });
   }
 
-  async function getConfig(settings) {
+  async function getConfig(settings, context) {
+    const request = context || {};
     const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
       action: "config",
       pin: settings.pin,
-      profileId: settings.profileId || "BG",
-      vehicleId: settings.vehicleId || settings.profileId || "BG",
-      userId: settings.userId || "BG"
+      requestId: request.requestId || settings.requestId || "",
+      profileId: request.profileId || settings.profileId || "BG",
+      carId: request.carId || settings.carId || settings.vehicleId || "BG",
+      vehicleId: request.carId || settings.carId || settings.vehicleId || "BG",
+      fuelId: request.fuelId || settings.fuelId || "",
+      userId: request.userId || settings.userId || "BG"
     }));
     if (!response || response.ok !== true) {
       throw new Error(response && response.error ? response.error : "Config failed.");
@@ -92,14 +96,17 @@
     return response;
   }
 
-  async function waitForReceipt(settings, requestId) {
+  async function waitForReceipt(settings, requestId, context) {
+    const request = context || {};
     const delays = [700, 1200, 2200, 4000, 6500];
     for (const delay of delays) {
       await new Promise(function (resolve) { setTimeout(resolve, delay); });
       const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
         action: "receipt",
         pin: settings.pin,
-        profileId: settings.profileId || "BG",
+        profileId: request.profileId || settings.profileId || "BG",
+        carId: request.carId || settings.carId || settings.vehicleId || "BG",
+        userId: request.userId || settings.userId || "BG",
         requestId
       }));
       if (response && response.ok === true && response.found) {
@@ -116,12 +123,20 @@
 
   async function postAction(settings, action, payloadKey, payload) {
     const requestId = window.TankowanieStorage.createId("request");
+    const context = {
+      profileId: payload && payload.profileId || settings.profileId || "BG",
+      carId: payload && (payload.carId || payload.vehicleId) || settings.carId || settings.vehicleId || "BG",
+      userId: payload && payload.userId || settings.userId || "BG"
+    };
     const body = {
       action,
       appVersion: appVersion(),
       apiVersion: apiVersion(),
       pin: settings.pin,
-      profileId: settings.profileId || "BG",
+      profileId: context.profileId,
+      carId: context.carId,
+      vehicleId: context.carId,
+      userId: context.userId,
       requestId
     };
     body[payloadKey] = payload;
@@ -132,7 +147,7 @@
       headers: { "Content-Type": "text/plain" },
       body: JSON.stringify(body)
     });
-    const receipt = await waitForReceipt(settings, requestId);
+    const receipt = await waitForReceipt(settings, requestId, context);
     if (!receipt || receipt.ok !== true) {
       throw new Error(receipt && receipt.error ? receipt.error : `${action} failed.`);
     }
