@@ -259,7 +259,7 @@
   }
 
   function isRefuelDraftEmpty() {
-    return !draft.odometer && !draft.pumpPrice && !parseDecimal(draft.liters);
+    return !draft.odometer && !draft.pumpPrice && !draft.pumpTotal && !parseDecimal(draft.liters);
   }
 
   function ensureDefaultDateForEmptyDraft() {
@@ -553,9 +553,9 @@
       discountedPrice: entry.discountedPrice,
       previousOdometer: stats.previousOdometer,
       distance: stats.distance,
-      pumpTotal: entry.liters * entry.pumpPrice,
+      pumpTotal: entry.pumpTotal || entry.liters * entry.pumpPrice,
       discountTotal: entry.liters * entry.discountPerLiter,
-      paidTotal: entry.liters * entry.discountedPrice,
+      paidTotal: (entry.pumpTotal || entry.liters * entry.pumpPrice) - entry.liters * entry.discountPerLiter,
       createdAt: new Date().toISOString()
     });
   }
@@ -576,7 +576,7 @@
   }
 
   function hasCurrentEntryInput() {
-    return !!draft.odometer || !!draft.pumpPrice || !!parseDecimal(draft.liters);
+    return !!draft.odometer || !!draft.pumpPrice || !!draft.pumpTotal || !!parseDecimal(draft.liters);
   }
 
   function captureEntryUndoSnapshot(reason, force) {
@@ -670,10 +670,22 @@
     return activeFuelHints().suggestedPumpPrice || null;
   }
 
+  function calculationSource() {
+    if (draft.calculationSource === "pumpTotal" && parseDecimal(draft.pumpTotal) !== null) return "pumpTotal";
+    if (draft.calculationSource === "unitPrice" || parseDecimal(draft.pumpPrice) !== null) return "unitPrice";
+    return "";
+  }
+
   function visiblePumpPrice() {
     const summary = retainedSummary();
     if (summary && summary.pumpPrice) return summary.pumpPrice;
-    return draft.pumpPrice || pumpPriceHintValue();
+    const liters = parseDecimal(draft.liters);
+    const pumpTotal = parseDecimal(draft.pumpTotal);
+    if (calculationSource() === "pumpTotal") {
+      return liters !== null && liters > 0 && pumpTotal !== null && pumpTotal > 0
+        ? pumpTotal / liters : null;
+    }
+    return parseDecimal(draft.pumpPrice) || pumpPriceHintValue();
   }
 
   function effectiveDiscount() {
@@ -705,15 +717,17 @@
     }
     const liters = parseDecimal(draft.liters);
     const price = Number(visiblePumpPrice());
-    const discount = effectiveDiscount();
-    const paid = paidPrice();
-    if (!Number.isFinite(liters) || liters <= 0 || !Number.isFinite(price) || price <= 0 || paid === null) {
-      return null;
-    }
+    const manualPumpTotal = parseDecimal(draft.pumpTotal);
+    const discountPerLiter = effectiveDiscount();
+    if (!Number.isFinite(liters) || liters <= 0 || !Number.isFinite(price) || price <= 0) return null;
+    const pump = calculationSource() === "pumpTotal" && manualPumpTotal !== null && manualPumpTotal > 0
+      ? manualPumpTotal
+      : liters * price;
+    const discount = liters * discountPerLiter;
     return {
-      pump: liters * price,
-      discount: liters * discount,
-      paid: liters * paid
+      pump,
+      discount,
+      paid: Math.max(0, pump - discount)
     };
   }
 
@@ -834,6 +848,10 @@
     receiptPromptEntryId = "";
     userAdjustedDate = draft.userAdjustedDate === true;
     activeEdit = draft.activeEdit || "odometer";
+    if (draft.pumpTotal === undefined) draft.pumpTotal = null;
+    if (draft.calculationSource !== "pumpTotal" && draft.calculationSource !== "unitPrice") {
+      draft.calculationSource = draft.pumpTotal ? "pumpTotal" : (draft.pumpPrice ? "unitPrice" : "");
+    }
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
     if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
     ensureDefaultDateForEmptyDraft();
@@ -1046,8 +1064,8 @@
     if (activeEdit === "price") {
       keypad.setMode({
         mode: "price",
-        hint: pumpPriceHintValue(),
-        value: draft.pumpPrice
+        hint: calculationSource() === "pumpTotal" ? visiblePumpPrice() : pumpPriceHintValue(),
+        value: calculationSource() === "pumpTotal" ? null : draft.pumpPrice
       });
       return;
     }
@@ -1067,6 +1085,15 @@
       });
       return;
     }
+    if (activeEdit === "pumpTotal") {
+      const liveTotals = totals();
+      keypad.setMode({
+        mode: "pumpTotal",
+        hint: calculationSource() === "unitPrice" && liveTotals ? liveTotals.pump : null,
+        value: calculationSource() === "pumpTotal" ? draft.pumpTotal : null
+      });
+      return;
+    }
     keypad.setMode({
       mode: "odometer",
       hint: odometerHintValue(),
@@ -1078,7 +1105,8 @@
     const target = activeEdit === "price"
       ? els.priceButton
       : activeEdit === "discount" ? els.discountButton
-        : activeEdit === "liters" ? els.litersButton : els.odometerButton;
+        : activeEdit === "liters" ? els.litersButton
+          : activeEdit === "pumpTotal" ? els.pumpTotalButton : els.odometerButton;
     if (!target || typeof target.scrollIntoView !== "function") return;
     window.requestAnimationFrame(function () {
       target.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -1086,7 +1114,7 @@
   }
 
   function setActiveEdit(field, shouldScroll) {
-    activeEdit = field === "price" || field === "liters" || field === "discount" ? field : "odometer";
+    activeEdit = field === "price" || field === "liters" || field === "pumpTotal" || field === "discount" ? field : "odometer";
     draft.activeEdit = activeEdit;
     draft = storage.saveDraft(draft);
     configureKeypad();
@@ -1134,6 +1162,7 @@
     const odometerActive = activeEdit === "odometer" && keypad.getMode() === "odometer";
     const priceActive = activeEdit === "price" && keypad.getMode() === "price";
     const litersActive = activeEdit === "liters" && keypad.getMode() === "liters";
+    const pumpTotalActive = activeEdit === "pumpTotal" && keypad.getMode() === "pumpTotal";
     const summary = retainedSummary();
     const odometerHint = odometerHintValue();
     const priceHint = summary && summary.pumpPrice ? summary.pumpPrice : pumpPriceHintValue();
@@ -1141,9 +1170,11 @@
     els.odometerButton.classList.toggle("active-edit", odometerActive);
     els.priceButton.classList.toggle("active-edit", priceActive);
     els.litersButton.classList.toggle("active-edit", litersActive);
+    els.pumpTotalButton.classList.toggle("active-edit", pumpTotalActive);
     setEmptyInactiveState(els.odometerButton, !draft.odometer, odometerActive);
-    setEmptyInactiveState(els.priceButton, !draft.pumpPrice, priceActive);
+    setEmptyInactiveState(els.priceButton, !visiblePumpPrice(), priceActive);
     setEmptyInactiveState(els.litersButton, !parseDecimal(draft.liters), litersActive);
+    setEmptyInactiveState(els.pumpTotalButton, !totals(), pumpTotalActive);
 
     if (odometerActive) {
       els.odometerValue.innerHTML = keypad.getDisplayHtml();
@@ -1163,8 +1194,8 @@
       els.pumpPriceValue.innerHTML = `${keypad.getDisplayHtml()} <span class="unit">zł/litr</span>`;
       els.pumpPriceValue.classList.toggle("stale", !draft.pumpPrice && !!priceHint);
       els.pumpPriceValue.classList.toggle("empty", !draft.pumpPrice && !priceHint);
-    } else if (draft.pumpPrice) {
-      els.pumpPriceValue.innerHTML = `${money(draft.pumpPrice)} <span class="unit">zł/litr</span>`;
+    } else if (draft.pumpPrice || (calculationSource() === "pumpTotal" && visiblePumpPrice())) {
+      els.pumpPriceValue.innerHTML = `${money(visiblePumpPrice())} <span class="unit">zł/litr</span>`;
       els.pumpPriceValue.classList.remove("stale", "empty");
     } else {
       els.pumpPriceValue.innerHTML = priceHint
@@ -1173,7 +1204,7 @@
       els.pumpPriceValue.classList.toggle("stale", !!priceHint);
       els.pumpPriceValue.classList.toggle("empty", !priceHint);
     }
-    setValueState(els.priceButton, !!draft.pumpPrice || !!(summary && summary.pumpPrice));
+    setValueState(els.priceButton, !!draft.pumpPrice || calculationSource() === "pumpTotal" || !!(summary && summary.pumpPrice));
 
     if (litersActive) {
       els.litersValue.innerHTML = keypad.getDisplayHtml();
@@ -1218,15 +1249,23 @@
 
   function renderTotals() {
     const summary = totals();
+    const pumpTotalActive = activeEdit === "pumpTotal" && keypad.getMode() === "pumpTotal";
     if (!summary) {
-      els.pumpTotalValue.textContent = "--";
+      els.pumpTotalValue.innerHTML = pumpTotalActive ? keypad.getDisplayHtml() : "--";
       els.discountTotalValue.textContent = "--";
       els.paidTotalValue.textContent = "--";
+      els.discountPercentValue.textContent = "--";
+      setValueState(els.pumpTotalButton, false);
       return;
     }
-    els.pumpTotalValue.textContent = `${money(summary.pump)} zł`;
+    els.pumpTotalValue.innerHTML = pumpTotalActive
+      ? `${keypad.getDisplayHtml()} <span class="summary-unit">zł</span>`
+      : `${money(summary.pump)} zł`;
     els.discountTotalValue.textContent = `${signedMoney(summary.discount)} zł`;
     els.paidTotalValue.textContent = `${money(summary.paid)} zł`;
+    const percent = summary.pump > 0 ? Math.abs(summary.discount) / summary.pump * 100 : null;
+    els.discountPercentValue.textContent = Number.isFinite(percent) ? `${percent.toFixed(1).replace(".", ",")}%` : "--";
+    setValueState(els.pumpTotalButton, true);
   }
 
   function render() {
@@ -1480,6 +1519,8 @@
     const date = normalizeDateIso(els.refuelDate.value || draft.date) || todayIso();
     const paid = paidPrice();
     const discount = effectiveDiscount();
+    const source = calculationSource();
+    const entryTotals = totals();
     if (activeProfile().allowedUsers.indexOf(activeUserId) === -1) {
       throw new Error("Ten użytkownik nie ma dostępu do tego auta.");
     }
@@ -1488,6 +1529,9 @@
     if (!Number.isFinite(price) || price <= 0) throw new Error("Uzupełnij cenę z dystrybutora.");
     if (!Number.isFinite(discount) || discount < 0) throw new Error("Rabat jest nieprawidłowy.");
     if (paid === null || paid <= 0) throw new Error("Cena po rabacie jest nieprawidłowa.");
+    if (!entryTotals || !Number.isFinite(entryTotals.pump) || entryTotals.pump <= 0) {
+      throw new Error("Uzupełnij kwotę z dystrybutora.");
+    }
 
     return {
       entryId: String(draft.entryId || storage.createId("entry")),
@@ -1495,7 +1539,9 @@
       fuelId: draft.fuel,
       odometer,
       liters: Number(liters.toFixed(2)),
-      pumpPrice: Number(price.toFixed(2)),
+      pumpPrice: Number(price.toFixed(source === "pumpTotal" ? 6 : 2)),
+      pumpTotal: Number(entryTotals.pump.toFixed(2)),
+      calculationSource: source || "unitPrice",
       discountPerLiter: Number(discount.toFixed(2)),
       discountedPrice: paid,
       refuelDate: date,
@@ -1546,6 +1592,8 @@
     draft.startedByUserId = "";
     draft.odometer = null;
     draft.pumpPrice = null;
+    draft.pumpTotal = null;
+    draft.calculationSource = "";
     draft.discountPerLiter = null;
     draft.discountPerLiterEdited = false;
     draft.liters = "";
@@ -1560,6 +1608,8 @@
     draft.startedByUserId = "";
     draft.odometer = null;
     draft.pumpPrice = null;
+    draft.pumpTotal = null;
+    draft.calculationSource = "";
     draft.liters = "";
     draft.activeEdit = "odometer";
     draft.userAdjustedDate = false;
@@ -1682,6 +1732,10 @@
     entryUndoSnapshot = normalizeEntryUndoSnapshot(storage.getEntryUndoSnapshot(targetFuel));
     activeEdit = draft.activeEdit || "odometer";
     userAdjustedDate = draft.userAdjustedDate === true;
+    if (draft.pumpTotal === undefined) draft.pumpTotal = null;
+    if (draft.calculationSource !== "pumpTotal" && draft.calculationSource !== "unitPrice") {
+      draft.calculationSource = draft.pumpTotal ? "pumpTotal" : (draft.pumpPrice ? "unitPrice" : "");
+    }
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
     if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
     ensureDefaultDateForEmptyDraft();
@@ -1700,6 +1754,8 @@
     captureEntryUndoSnapshot("fast-second-fuel", true);
     draft.odometer = Number(recentRefuel.odometer);
     draft.pumpPrice = null;
+    draft.pumpTotal = null;
+    draft.calculationSource = "";
     draft.discountPerLiter = null;
     draft.discountPerLiterEdited = false;
     draft.liters = "";
@@ -2232,7 +2288,11 @@
     let shouldAdvanceToLiters = false;
     if (payload.mode === "price") {
       draft.pumpPrice = payload.hasInput ? Number(payload.value.toFixed(2)) : null;
+      draft.calculationSource = payload.hasInput ? "unitPrice" : "";
       shouldAdvanceToLiters = payload.hasInput && payload.inputLength >= 3 && !draft.liters;
+    } else if (payload.mode === "pumpTotal") {
+      draft.pumpTotal = payload.hasInput ? Number(payload.value.toFixed(2)) : null;
+      draft.calculationSource = payload.hasInput ? "pumpTotal" : (draft.pumpPrice ? "unitPrice" : "");
     } else if (payload.mode === "discount") {
       draft.discountPerLiter = payload.hasInput ? Number(payload.value.toFixed(2)) : null;
       draft.discountPerLiterEdited = !!payload.hasInput;
@@ -2255,15 +2315,24 @@
       return;
     }
     if (activeEdit === "price") {
-      if (!draft.pumpPrice) {
+      if (!draft.pumpPrice && calculationSource() !== "pumpTotal") {
         const suggestedPrice = pumpPriceHintValue();
         if (suggestedPrice && Number.isFinite(Number(suggestedPrice)) && Number(suggestedPrice) > 0) {
           captureEntryUndoSnapshot("accept-price");
           draft.pumpPrice = Number(Number(suggestedPrice).toFixed(2));
+          draft.calculationSource = "unitPrice";
           saveAll();
         }
       }
       setActiveEdit("liters", true);
+      return;
+    }
+    if (activeEdit === "liters") {
+      setActiveEdit("pumpTotal", true);
+      return;
+    }
+    if (activeEdit === "pumpTotal") {
+      setActiveEdit("odometer", true);
       return;
     }
     setActiveEdit("odometer", true);
@@ -2340,6 +2409,11 @@
     els.litersButton.addEventListener("click", function () {
       playSound("field");
       setActiveEdit("liters", true);
+    });
+
+    els.pumpTotalButton.addEventListener("click", function () {
+      playSound("field");
+      setActiveEdit("pumpTotal", true);
     });
 
     els.saveButton.addEventListener("click", function () {
@@ -2490,8 +2564,8 @@
       "lastSheetRead", "fuelToggle", "fuelToggleImage", "fuelStaticLabel", "refuelDate", "dateButton",
       "dateValue", "odometerButton", "odometerValue", "distanceValue",
       "priceButton", "pumpPriceValue", "discountButton", "discountValue",
-      "paidPriceValue", "litersButton", "litersValue", "pumpTotalValue",
-      "discountTotalValue", "paidTotalValue", "saveButton", "syncButton",
+      "paidPriceValue", "litersButton", "litersValue", "pumpTotalButton", "pumpTotalValue",
+      "discountTotalValue", "discountPercentValue", "paidTotalValue", "saveButton", "syncButton",
       "refreshButton", "settingsPanel", "endpointInput", "pinInput",
       "saveSettingsButton", "testSettingsButton", "queueList", "toast",
       "inlineKeypad", "inlineKeypadGrid", "syncWorkingPanel", "syncWorkingText",
@@ -2518,6 +2592,10 @@
     ensureDefaultDateForEmptyDraft();
     userAdjustedDate = draft.userAdjustedDate === true;
     activeEdit = draft.activeEdit || "odometer";
+    if (draft.pumpTotal === undefined) draft.pumpTotal = null;
+    if (draft.calculationSource !== "pumpTotal" && draft.calculationSource !== "unitPrice") {
+      draft.calculationSource = draft.pumpTotal ? "pumpTotal" : (draft.pumpPrice ? "unitPrice" : "");
+    }
     if (draft.discountPerLiter === undefined) draft.discountPerLiter = null;
     if (draft.discountPerLiterEdited !== true) draft.discountPerLiterEdited = false;
     overlayQueuedHints();

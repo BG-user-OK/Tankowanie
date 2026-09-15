@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v4.0.0";
+  const APP_VERSION = "v4.1.0";
   const API_VERSION = "TANKOWANIE_API_V6";
   const PREFIX = "tankowanie_v2";
   const LEGACY_PREFIX = "tankowanie_v1";
@@ -158,7 +158,7 @@
 
   function hasDraftInput(draft) {
     if (!draft || typeof draft !== "object") return false;
-    return !!draft.odometer || !!draft.pumpPrice || !!Number(String(draft.liters || "").replace(",", "."));
+    return !!draft.odometer || !!draft.pumpPrice || !!draft.pumpTotal || !!Number(String(draft.liters || "").replace(",", "."));
   }
 
   function legacyScope(key, suffix) {
@@ -474,6 +474,8 @@
       fuel: normalizeFuel(fuelId, car.carId),
       odometer: null,
       pumpPrice: null,
+      pumpTotal: null,
+      calculationSource: "",
       discountPerLiter: null,
       discountPerLiterEdited: false,
       liters: "",

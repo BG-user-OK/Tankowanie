@@ -28,7 +28,7 @@
   }
 
   function isDecimalMode(mode) {
-    return mode === "price" || mode === "liters" || mode === "discount";
+    return mode === "price" || mode === "liters" || mode === "pumpTotal" || mode === "discount";
   }
 
   function scaledDecimal(value) {
@@ -137,8 +137,9 @@
     const mode = options.mode === "price"
       ? "price"
       : options.mode === "liters" ? "liters"
-        : options.mode === "discount" ? "discount" : "odometer";
-    const maxDigits = mode === "odometer" ? 6 : mode === "liters" ? 5 : 4;
+        : options.mode === "pumpTotal" ? "pumpTotal"
+          : options.mode === "discount" ? "discount" : "odometer";
+    const maxDigits = mode === "odometer" ? 6 : mode === "liters" ? 5 : mode === "pumpTotal" ? 6 : 4;
     const hasValue = options.value !== null && options.value !== undefined && options.value !== "";
     const hasHint = options.hint !== null && options.hint !== undefined && options.hint !== "" && Number(options.hint) > 0;
     const baseValue = hasValue
