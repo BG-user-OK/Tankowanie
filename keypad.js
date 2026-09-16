@@ -101,6 +101,13 @@
   }
 
   function displayHtml() {
+    if (active && active.mode === "deposit") {
+      return Array.from({ length: 4 }, function (_, index) {
+        const digit = active.entered[index] || "_";
+        const cursor = index === Math.max(0, active.entered.length - 1);
+        return '<span class="' + (cursor ? "cursor-digit" : "edit-entered") + '">' + digit + '</span>';
+      }).join(" ");
+    }
     const parts = splitDisplay();
     if (parts.empty) return '<span class="empty">--</span>';
     const baseClass = active && active.baseIsHint ? "edit-hint is-stale" : "edit-hint";
@@ -138,7 +145,8 @@
       ? "price"
       : options.mode === "liters" ? "liters"
         : options.mode === "pumpTotal" ? "pumpTotal"
-          : options.mode === "discount" ? "discount" : "odometer";
+          : options.mode === "deposit" ? "deposit"
+            : options.mode === "discount" ? "discount" : "odometer";
     const maxDigits = mode === "odometer" ? 6 : mode === "liters" ? 5 : mode === "pumpTotal" ? 6 : 4;
     const hasValue = options.value !== null && options.value !== undefined && options.value !== "";
     const hasHint = options.hint !== null && options.hint !== undefined && options.hint !== "" && Number(options.hint) > 0;
@@ -184,6 +192,7 @@
       return;
     }
     if (/^[0-9]$/.test(key)) {
+      if (active.mode === "deposit" && active.entered.length >= 4) return;
       active.entered.push(key);
       if (active.entered.length > active.maxDigits) {
         active.entered.shift();

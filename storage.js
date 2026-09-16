@@ -1,8 +1,8 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v4.1.0";
-  const API_VERSION = "TANKOWANIE_API_V6";
+  const APP_VERSION = "v4.2.0";
+  const API_VERSION = "TANKOWANIE_API_V7";
   const PREFIX = "tankowanie_v2";
   const LEGACY_PREFIX = "tankowanie_v1";
 

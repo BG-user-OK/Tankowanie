@@ -1214,3 +1214,35 @@ body.editing-discount footer {
     font-size: 13px;
   }
 }
+
+.results-slot { position: relative; min-width: 0; }
+.results-slot > .result-band { height: 100%; }
+body.balance-mode #resultBand { visibility: hidden; }
+.balance-box {
+  min-width: 0; min-height: 58px; border-radius: 8px; padding: 5px;
+  display: flex; flex-direction: column; justify-content: center;
+  background: #242424; color: #fff; font-size: 17px; font-weight: 800;
+}
+.balance-box > span { overflow-wrap: anywhere; }
+.balance-box.positive { background: #00f000; color: #052005; }
+.balance-box.negative { background: #f04438; color: #fff; }
+.balance-box small { font-size: 10px; font-weight: 700; }
+.deposit-button {
+  min-height: 58px; padding: 4px; border: 1px solid #d9bd41;
+  background: #fff2ad; color: #695000; font-weight: 900; font-size: 13px;
+}
+.deposit-panel {
+  position: absolute; inset: 0; border-radius: 8px; padding: 8px 5px 8px 47px;
+  background: #00f000; color: #052005;
+  display: flex; flex-direction: column; justify-content: center; gap: 8px;
+}
+.deposit-panel > span { font-size: 15px; font-weight: 800; }
+.deposit-panel > strong { font-size: 28px; white-space: nowrap; }
+.deposit-panel .cursor-digit { color: #052005; border-color: #052005; }
+.cancel-deposit {
+  position: absolute; left: 2px; top: 2px; width: 44px; height: 44px;
+  padding: 0; background: transparent; border: 0;
+  color: #bc1520; font-size: 42px; font-weight: 900; line-height: 1;
+}
+
+.deposit-panel .edit-entered { color: #052005; }

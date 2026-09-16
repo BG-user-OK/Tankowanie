@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#000000">
   <title>Tankowanie</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=4.1.0">
+  <link rel="stylesheet" href="styles.css?v=4.2.0">
   <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -19,7 +19,8 @@
   <div class="app-shell">
     <main>
       <section class="top-row">
-        <div class="result-band">
+        <div class="results-slot">
+        <div class="result-band" id="resultBand">
           <div>
             <span class="label">Dziś</span>
             <div class="result-value">
@@ -45,8 +46,14 @@
           </div>
         </div>
 
+        <section id="depositPanel" class="deposit-panel" aria-label="Wpłata" hidden>
+          <button id="cancelDepositButton" class="cancel-deposit" type="button" aria-label="Anuluj wpłatę" title="Anuluj">×</button>
+          <span>wpłacam kwotę:</span>
+          <strong id="depositValue" aria-live="polite">_ _ _ _</strong>
+        </section>
+        </div>
         <button id="fuelToggle" class="fuel-switch fuel-toggle" type="button" aria-label="Wybór paliwa: LPG">
-          <img id="fuelToggleImage" src="grafiki/LPG.png?v=4.1.0" alt="LPG">
+          <img id="fuelToggleImage" src="grafiki/LPG.png?v=4.2.0" alt="LPG">
           <span id="fuelStaticLabel" class="fuel-static-label" hidden>E95</span>
         </button>
       </section>
@@ -56,10 +63,15 @@
           <button id="odometerButton" class="field-button" type="button" aria-label="Licznik">
             <span class="field-main" id="odometerValue">--</span>
           </button>
-          <div class="distance-box" aria-label="Dystans od ostatniego tankowania">
+          <div id="balanceBox" class="balance-box" aria-live="polite" hidden>
+            <span>saldo: <strong id="balanceValue">--</strong></span>
+            <small id="balanceStatus"></small>
+          </div>
+          <div id="distanceBox" class="distance-box" aria-label="Dystans od ostatniego tankowania">
             <strong id="distanceValue">--</strong>
             <span>km</span>
           </div>
+          <button id="depositButton" class="deposit-button" type="button" hidden>wpłacam</button>
           <button id="dateButton" class="field-button date-button" type="button" aria-label="Data tankowania">
             <span class="field-main date-value" id="dateValue">--</span>
           </button>
@@ -124,7 +136,7 @@
           <span id="syncState">brak sync</span>
           <span id="queueState">q: 0</span>
         </div>
-        <img id="flotaImage" src="grafiki/Orlen-flota.jpg?v=4.1.0" alt="Orlen Flota">
+        <img id="flotaImage" src="grafiki/Orlen-flota.jpg?v=4.2.0" alt="Orlen Flota">
         <div id="flotaImageFallback" class="flota-image-fallback" hidden></div>
         <div id="profileFooterText" class="profile-footer-text" hidden></div>
         <div class="flota-actions">
@@ -161,7 +173,7 @@
             <span>PIN</span>
             <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
           </label>
-          <span class="settings-version" id="appVersionLabel">v4.1.0</span>
+          <span class="settings-version" id="appVersionLabel">v4.2.0</span>
         </div>
 
         <div class="actions compact">
@@ -192,10 +204,11 @@
   <input id="receiptCameraInput" class="visually-hidden" type="file" accept="image/*" capture="environment">
   <input id="receiptGalleryInput" class="visually-hidden" type="file" accept="image/*">
 
-  <script src="storage.js?v=4.1.0"></script>
-  <script src="keypad.js?v=4.1.0"></script>
-  <script src="sync.js?v=4.1.0"></script>
-  <script src="sounds.js?v=4.1.0"></script>
-  <script src="app.js?v=4.1.0"></script>
+  <script src="storage.js?v=4.2.0"></script>
+  <script src="keypad.js?v=4.2.0"></script>
+  <script src="sync.js?v=4.2.0"></script>
+  <script src="sounds.js?v=4.2.0"></script>
+  <script src="balance.js?v=4.2.0"></script>
+  <script src="app.js?v=4.2.0"></script>
 </body>
 </html>

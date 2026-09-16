@@ -32,7 +32,9 @@
     return new Promise(function (resolve, reject) {
       const callback = `tankowanie_cb_${Date.now()}_${Math.random().toString(36).slice(2)}`;
       const script = document.createElement("script");
+      let timeout;
       const cleanup = function () {
+        window.clearTimeout(timeout);
         delete window[callback];
         script.remove();
       };
@@ -50,6 +52,10 @@
         cleanup();
         reject(new Error("Network error."));
       };
+      timeout = window.setTimeout(function () {
+        cleanup();
+        reject(new Error("Network timeout."));
+      }, 45000);
       script.src = `${endpoint}${endpoint.includes("?") ? "&" : "?"}${qs}`;
       document.body.appendChild(script);
     });
@@ -122,7 +128,8 @@
   }
 
   async function postAction(settings, action, payloadKey, payload) {
-    const requestId = window.TankowanieStorage.createId("request");
+    // Each transport attempt polls its own receipt; the payload keeps its durable transaction ID.
+    const requestId = (payload.requestId || "request") + "_" + window.TankowanieStorage.createId("attempt");
     const context = {
       profileId: payload && payload.profileId || settings.profileId || "BG",
       carId: payload && (payload.carId || payload.vehicleId) || settings.carId || settings.vehicleId || "BG",
@@ -163,6 +170,19 @@
   }
 
   window.TankowanieSync = {
+    getBalance: async function (settings, transactionIds) {
+      const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
+        action: "getBalance", pin: settings.pin, profileId: settings.profileId,
+        carId: settings.carId, userId: settings.userId,
+        transactionIds: JSON.stringify(transactionIds || [])
+      }));
+      if (!response || !response.ok) throw new Error(response && response.error || "Nie udało się pobrać salda.");
+      assertApiCompatible(response);
+      return response;
+    },
+    addDeposit: function (settings, deposit) {
+      return postAction(settings, "addDeposit", "deposit", deposit);
+    },
     getConfig,
     ping,
     debugProps,

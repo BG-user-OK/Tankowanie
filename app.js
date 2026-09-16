@@ -4,6 +4,10 @@
   const storage = window.TankowanieStorage;
   const keypad = window.TankowanieKeypad;
   const sync = window.TankowanieSync;
+  const balance = window.TankowanieBalance;
+  let depositMode = false;
+  let depositAmount = 0;
+  let balanceError = "";
 
   const els = {};
   const PROFILES = {
@@ -153,6 +157,138 @@
     return profileId === "E_LS995_VW_CADDY" || profileId === "OK2071C_AUDI";
   }
 
+  function isBalanceMode() {
+    return isOnProfile(activeProfileId) && (activeUserId === "GOSIA" || activeUserId === "GRZESIU");
+  }
+
+  function pendingDeposits() {
+    return isBalanceMode() ? balance.pending().filter(tx => tx.kind === "deposit") : [];
+  }
+
+  function renderBalance() {
+    const enabled = isBalanceMode();
+    document.body.classList.toggle("balance-mode", enabled);
+    els.balanceBox.hidden = !enabled;
+    els.depositButton.hidden = !enabled;
+    els.odometerButton.hidden = enabled;
+    els.distanceBox.hidden = enabled;
+    els.depositPanel.hidden = !enabled || !depositMode;
+    ["priceButton", "litersButton", "pumpTotalButton", "discountButton", "dateButton"].forEach(id => {
+      els[id].disabled = !!busyAction || (enabled && depositMode);
+    });
+    if (!enabled) return;
+    const state = balance.view();
+    els.balanceValue.textContent = state.value === null ? "--" : money(state.value) + " zł";
+    els.balanceBox.classList.toggle("negative", state.value !== null && state.value < 0);
+    els.balanceBox.classList.toggle("positive", state.value !== null && state.value >= 0);
+    els.balanceStatus.textContent = state.pending ? "oczekuje: " + state.pending
+      : balanceError ? "brak aktualizacji" : state.fetched ? "" : "pobieranie";
+    els.balanceBox.title = balanceError;
+    els.depositButton.disabled = !!busyAction || depositMode;
+    els.cancelDepositButton.disabled = !!busyAction;
+    if (depositMode) {
+      els.depositValue.innerHTML = keypad.getDisplayHtml();
+      els.saveButton.disabled = true;
+    }
+  }
+
+  async function refreshBalance() {
+    if (!isBalanceMode() || !navigator.onLine) return;
+    const requestSettings = currentSettings();
+    if (missingSettingsMessage(requestSettings)) return;
+    const ids = balance.pending().map(tx => tx.id);
+    try {
+      const snapshot = await sync.getBalance(requestSettings, ids);
+      // A new transaction may already be included in this balance but absent from its acknowledgements.
+      if (balance.pending().some(tx => !ids.includes(tx.id))) return refreshBalance();
+      balance.applySnapshot(snapshot);
+      balanceError = "";
+    } catch (error) {
+      balanceError = friendlySyncError(error);
+    }
+    renderBalance();
+    renderQueue();
+  }
+
+  function openDeposit() {
+    if (!isBalanceMode() || busyAction) return;
+    depositMode = true;
+    depositAmount = 0;
+    keypad.setMode({ mode: "deposit", hint: null, value: null });
+    render();
+  }
+
+  function closeDeposit() {
+    if (busyAction) return;
+    depositMode = false;
+    depositAmount = 0;
+    configureKeypad();
+    render();
+  }
+
+  async function flushDeposits() {
+    const pending = pendingDeposits();
+    if (!pending.length) return;
+    const requestSettings = currentSettings({ persist: true });
+    const missing = missingSettingsMessage(requestSettings);
+    if (missing || !navigator.onLine) throw new Error(missing || "Wpłata czeka na połączenie.");
+    for (const tx of pending) {
+      await sync.addDeposit(Object.assign({}, requestSettings, tx.payload), tx.payload);
+    }
+    await refreshBalance();
+  }
+
+  async function confirmDeposit() {
+    if (!depositMode || busyAction) return;
+    if (!Number.isInteger(depositAmount) || depositAmount < 1 || depositAmount > 9999) {
+      toast("Wpisz kwotę od 1 do 9999 zł.");
+      return;
+    }
+    let recorded = false;
+    try {
+      const id = storage.createId("deposit");
+      balance.track(id, "deposit", depositAmount, {
+        depositId: id, requestId: id, amount: depositAmount, date: todayIso(),
+        userId: activeUserId, profileId: activeProfile().profileId, carId: activeProfileId
+      });
+      // The confirmed intent is durable. X can only cancel before this point.
+      recorded = true;
+      setBusy("deposit");
+      render();
+      await flushDeposits();
+      toast(balanceError ? "Wpłata zapisana. Saldo czeka na aktualizację." : "Wpłata zapisana.");
+    } catch (error) {
+      toast("Wpłata niepotwierdzona. " + friendlySyncError(error));
+    } finally {
+      if (recorded) {
+        depositMode = false;
+        depositAmount = 0;
+        configureKeypad();
+      }
+      setBusy("");
+      render();
+      refreshBalance();
+    }
+  }
+
+  async function syncQueue() {
+    if (busyAction || depositMode) return;
+    try {
+      if (pendingDeposits().length) {
+        setBusy("deposit");
+        await flushDeposits();
+        setBusy("");
+      }
+      if (queue.length) await syncRefuelQueue();
+    } catch (error) {
+      toast(friendlySyncError(error));
+    } finally {
+      setBusy("");
+      await refreshBalance();
+      render();
+    }
+  }
+
   function userTile(userId) {
     return USER_TILES.find(function (tile) {
       return tile.id === userId;
@@ -259,7 +395,7 @@
   }
 
   function isRefuelDraftEmpty() {
-    return !draft.odometer && !draft.pumpPrice && !draft.pumpTotal && !parseDecimal(draft.liters);
+    return (isBalanceMode() || !draft.odometer) && !draft.pumpPrice && !draft.pumpTotal && !parseDecimal(draft.liters);
   }
 
   function ensureDefaultDateForEmptyDraft() {
@@ -576,7 +712,7 @@
   }
 
   function hasCurrentEntryInput() {
-    return !!draft.odometer || !!draft.pumpPrice || !!draft.pumpTotal || !!parseDecimal(draft.liters);
+    return (!isBalanceMode() && !!draft.odometer) || !!draft.pumpPrice || !!draft.pumpTotal || !!parseDecimal(draft.liters);
   }
 
   function captureEntryUndoSnapshot(reason, force) {
@@ -606,6 +742,7 @@
   }
 
   function restoreEntryUndoSnapshot() {
+    if (depositMode) { closeDeposit(); return; }
     if (!entryUndoSnapshot || !entryUndoSnapshot.active) {
       toast("Brak lokalnego stanu do cofnięcia.");
       return;
@@ -828,6 +965,8 @@
   }
 
   function reloadProfileState(profileId, options) {
+    depositMode = false;
+    depositAmount = 0;
     if (options && options.saveCurrent) saveAll();
     if (options && options.userId) activeUserId = storage.setActiveUser(options.userId);
     else activeUserId = storage.getActiveUser();
@@ -999,6 +1138,7 @@
   }
 
   function busyText(action) {
+    if (action === "deposit") return "Zapisywanie wpłaty...";
     if (action === "save") return "Wysyłanie do arkusza...";
     if (action === "sync") return "Synchronizacja...";
     if (action === "scan") return "Wysyłanie skanu...";
@@ -1044,6 +1184,7 @@
       item.element.disabled = isBusy;
     });
     renderBusyReceiptPrompt();
+    renderBalance();
   }
 
   function setBusy(action) {
@@ -1060,7 +1201,7 @@
   }
 
   function configureKeypad() {
-    if (!keypadReady) return;
+    if (!keypadReady || depositMode) return;
     if (activeEdit === "price") {
       keypad.setMode({
         mode: "price",
@@ -1114,7 +1255,10 @@
   }
 
   function setActiveEdit(field, shouldScroll) {
+    if (depositMode) return;
+    if (isBalanceMode() && field === "odometer") field = "price";
     activeEdit = field === "price" || field === "liters" || field === "pumpTotal" || field === "discount" ? field : "odometer";
+    if (isBalanceMode() && activeEdit === "odometer") activeEdit = "price";
     draft.activeEdit = activeEdit;
     draft = storage.saveDraft(draft);
     configureKeypad();
@@ -1332,8 +1476,10 @@
   }
 
   function renderQueue() {
-    if (els.syncButton) els.syncButton.hidden = !queue.length;
-    if (!queue.length) {
+    const deposits = pendingDeposits();
+    els.queueState.textContent = "q: " + (queue.length + deposits.length);
+    if (els.syncButton) els.syncButton.hidden = !queue.length && !deposits.length;
+    if (!queue.length && !deposits.length) {
       if (els.queuePanel) els.queuePanel.classList.add("queue-empty");
       els.queueList.textContent = "";
       return;
@@ -1343,10 +1489,16 @@
       return `
         <div class="queue-item">
           <strong>${item.fuel}</strong>
-          <span>${item.refuelDate}, ${item.odometer} km, ${item.liters} l, ${money(item.discountedPrice)} zł</span>
+          <span>${item.refuelDate}, ${item.odometer ? item.odometer + " km, " : ""} ${item.liters} l, ${money(item.discountedPrice)} zł</span>
         </div>
       `;
     }).join("");
+    deposits.forEach(tx => {
+      const row = document.createElement("div");
+      row.className = "queue-item";
+      row.textContent = "Wpłata " + money(tx.payload.amount) + " zł - oczekuje";
+      els.queueList.appendChild(row);
+    });
   }
 
   function renderReceiptScanState() {
@@ -1358,7 +1510,7 @@
     els.refreshButton.title = "Pobierz dane z arkusza";
     els.refreshButton.setAttribute("aria-label", "Pobierz dane");
     els.saveButton.classList.toggle("scan-pending", active);
-    if (queue.length && isRefuelDraftEmpty()) {
+    if ((queue.length || pendingDeposits().length) && isRefuelDraftEmpty()) {
       els.saveButton.title = active ? "Wyślij kolejkę i skan" : "Wyślij kolejkę";
       els.saveButton.setAttribute("aria-label", els.saveButton.title);
       return;
@@ -1424,7 +1576,7 @@
         const consumption = distance && liters ? Number(((liters / distance) * 100).toFixed(2)) : null;
         fuelHint.suggestedPumpPrice = entry.pumpPrice;
         fuelHint.lastPaidPrice = entry.discountedPrice;
-        fuelHint.lastOdometer = entry.odometer;
+        if (entry.odometer) fuelHint.lastOdometer = entry.odometer;
         fuelHint.lastLiters = entry.liters;
         fuelHint.lastDate = entry.refuelDate;
         fuelHint.lastDateIso = entry.refuelDate;
@@ -1495,6 +1647,7 @@
       return config;
     } finally {
       if (!silent) setBusy("");
+      refreshBalance();
     }
   }
 
@@ -1507,6 +1660,7 @@
   }
 
   function maybeAutoRefreshConfig() {
+    refreshBalance();
     const syncSettings = currentSettings();
     if (!syncSettings.endpointUrl || !syncSettings.pin || !navigator.onLine) return;
     refreshConfig({ silent: true }).catch(function () {});
@@ -1524,7 +1678,7 @@
     if (activeProfile().allowedUsers.indexOf(activeUserId) === -1) {
       throw new Error("Ten użytkownik nie ma dostępu do tego auta.");
     }
-    if (!Number.isInteger(odometer) || odometer <= 0) throw new Error("Uzupełnij licznik.");
+    if (!isBalanceMode() && (!Number.isInteger(odometer) || odometer <= 0)) throw new Error("Uzupełnij licznik.");
     if (!Number.isFinite(liters) || liters <= 0) throw new Error("Uzupełnij ilość paliwa.");
     if (!Number.isFinite(price) || price <= 0) throw new Error("Uzupełnij cenę z dystrybutora.");
     if (!Number.isFinite(discount) || discount < 0) throw new Error("Rabat jest nieprawidłowy.");
@@ -1537,7 +1691,7 @@
       entryId: String(draft.entryId || storage.createId("entry")),
       fuel: draft.fuel,
       fuelId: draft.fuel,
-      odometer,
+      ...(isBalanceMode() ? {} : { odometer }),
       liters: Number(liters.toFixed(2)),
       pumpPrice: Number(price.toFixed(source === "pumpTotal" ? 6 : 2)),
       pumpTotal: Number(entryTotals.pump.toFixed(2)),
@@ -1550,7 +1704,7 @@
       profileId: activeProfile().profileId,
       carId: activeProfileId,
       vehicleId: activeProfileId,
-      userId: draft.startedByUserId || activeUserId,
+      userId: isOnProfile(activeProfileId) ? activeUserId : draft.startedByUserId || activeUserId,
       appVersion: storage.APP_VERSION
     };
   }
@@ -1563,7 +1717,7 @@
       : null;
     fuelHint.suggestedPumpPrice = entry.pumpPrice;
     fuelHint.lastPaidPrice = entry.discountedPrice;
-    fuelHint.lastOdometer = entry.odometer;
+    if (entry.odometer) fuelHint.lastOdometer = entry.odometer;
     fuelHint.lastLiters = entry.liters;
     fuelHint.lastDate = entry.refuelDate;
     fuelHint.lastDateIso = entry.refuelDate;
@@ -1584,7 +1738,7 @@
     });
     fuelHint.provisional = true;
     hints.fuels[entry.fuel] = fuelHint;
-    hints.latestOdometer = Math.max(Number(hints.latestOdometer || 0), entry.odometer);
+    hints.latestOdometer = Math.max(Number(hints.latestOdometer || 0), Number(entry.odometer || 0));
   }
 
   function clearEntryDraft() {
@@ -1604,6 +1758,7 @@
   }
 
   function clearRefuelInputDraft() {
+    if (depositMode) { openDeposit(); return; }
     draft.entryId = "";
     draft.startedByUserId = "";
     draft.odometer = null;
@@ -2138,9 +2293,19 @@
   }
 
   async function saveEntry() {
+    if (busyAction || depositMode) return;
     try {
       draft.date = els.refuelDate.value || todayIso();
       const entry = buildEntry();
+      if (isBalanceMode()) {
+        entry.requestId = "refuel_" + entry.entryId;
+        draft.entryId = entry.entryId;
+        storage.saveDraft(draft);
+        if (!queue.some(item => item.entryId === entry.entryId)) queue.push(entry);
+        storage.saveQueue(queue);
+        balance.track(entry.entryId, "refuel", -Number(totals().paid.toFixed(2)), entry);
+        renderBalance();
+      }
       const entryContext = {
         requestId: storage.createId("config"),
         carId: entry.carId,
@@ -2174,6 +2339,8 @@
         applyConfig(readyConfig, entryContext);
         const receipt = await sync.submitEntry(syncSettings, entry);
         savedReceipt = receipt;
+        queue = queue.filter(item => item.entryId !== entry.entryId);
+        storage.saveQueue(queue);
         applyReceipt(receipt, entryContext);
         if (trackReceipt) registerReceiptCandidate(entry, savedReceipt, false);
         await tryUploadReceiptScansForReceipt(receipt, syncSettings);
@@ -2187,6 +2354,7 @@
         return;
       } finally {
         setBusy("");
+        refreshBalance();
       }
       if (savedReceipt) await tryUploadReceiptScansForReceipt(savedReceipt, syncSettings);
       rememberRecentRefuel(entry);
@@ -2226,7 +2394,7 @@
     render();
   }
 
-  async function syncQueue() {
+  async function syncRefuelQueue() {
     if (!queue.length) {
       toast("Kolejka jest pusta.");
       return;
@@ -2285,6 +2453,11 @@
   }
 
   function applyKeypadValue(payload) {
+    if (payload.mode === "deposit") {
+      depositAmount = payload.hasInput ? payload.value : 0;
+      renderBalance();
+      return;
+    }
     let shouldAdvanceToLiters = false;
     if (payload.mode === "price") {
       draft.pumpPrice = payload.hasInput ? Number(payload.value.toFixed(2)) : null;
@@ -2310,6 +2483,7 @@
   }
 
   function advanceEditField() {
+    if (depositMode) { confirmDeposit(); return; }
     if (activeEdit === "odometer") {
       setActiveEdit("price", true);
       return;
@@ -2339,9 +2513,15 @@
   }
 
   function bindEvents() {
+    els.depositButton.addEventListener("click", openDeposit);
+    els.cancelDepositButton.addEventListener("click", closeDeposit);
+    window.addEventListener("storage", function (event) {
+      if (event.key && event.key.startsWith("tankowanie_v2__balance__")) render();
+    });
     window.addEventListener("online", function () {
       updateOnlineState();
       maybeAutoRefreshConfig();
+      if (pendingDeposits().length && !busyAction && !depositMode) syncQueue();
     });
     window.addEventListener("offline", updateOnlineState);
     window.addEventListener("resize", function () {
@@ -2352,7 +2532,7 @@
       const keyButton = event.target && event.target.closest ? event.target.closest("[data-key]") : null;
       if (!keyButton) return;
       playSound("keypad");
-      if (/^[0-9]$/.test(String(keyButton.dataset.key || ""))) {
+      if (!depositMode && /^[0-9]$/.test(String(keyButton.dataset.key || ""))) {
         if (!hasCurrentEntryInput()) captureEntryUndoSnapshot("first-digit", true);
         clearLastSummary();
       }
@@ -2419,7 +2599,7 @@
     els.saveButton.addEventListener("click", function () {
       if (Date.now() < suppressReceiptActionClickUntil) return;
       playSound("other");
-      if (queue.length && isRefuelDraftEmpty()) {
+      if ((queue.length || pendingDeposits().length) && isRefuelDraftEmpty()) {
         syncQueue();
         return;
       }
@@ -2496,6 +2676,7 @@
       render();
       toast("Ustawienia zapisane.");
       maybeAutoRefreshConfig();
+      if (pendingDeposits().length && !busyAction && !depositMode) syncQueue();
     });
 
     els.testSettingsButton.addEventListener("click", async function () {
@@ -2557,6 +2738,8 @@
 
   function cacheElements() {
     [
+      "balanceBox", "balanceValue", "balanceStatus", "depositButton", "depositPanel",
+      "depositValue", "cancelDepositButton", "distanceBox", "resultBand",
       "profileChooser", "profileTiles", "profileSwitchButton", "profileFooterText",
       "flotaImage", "flotaImageFallback",
       "settingsToggle", "onlineState", "syncState", "queueState", "monthlyAverage",
