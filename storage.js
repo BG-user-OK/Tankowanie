@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v4.2.0";
+  const APP_VERSION = "v4.2.1";
   const API_VERSION = "TANKOWANIE_API_V7";
   const PREFIX = "tankowanie_v2";
   const LEGACY_PREFIX = "tankowanie_v1";
@@ -377,6 +377,77 @@
   }
 
   migrateLegacyData();
+
+  const TEST_CLEANUP_KEY = PREFIX + "__migration__retired_caddy_test_20260716";
+  const TEST_CAR = "E_LS995_VW_CADDY";
+  let testQueueCleanup = { status: "not-found" };
+
+  function exactTestNumber(value, expected) {
+    return (typeof value === "number" || (typeof value === "string" && /^\d+(?:\.\d+)?$/.test(value)))
+      && Number(value) === expected;
+  }
+
+  function testEntryValuesMatch(entry) {
+    return !!entry && typeof entry === "object"
+      && (entry.fuel === "ON" || entry.fuelId === "ON")
+      && entry.refuelDate === "2026-07-16"
+      && exactTestNumber(entry.odometer, 555221)
+      && exactTestNumber(entry.liters, 30)
+      && exactTestNumber(entry.discountedPrice, 6.31);
+  }
+
+  function isRetiredTestEntry(entry, carId) {
+    if (!entry || typeof entry !== "object") return false;
+    const cars = [carId, entry.carId, entry.vehicleId, entry.profileId].filter(Boolean);
+    if (!cars.some(value => normalizeCarId(value) === TEST_CAR)) return false;
+    if (testEntryValuesMatch(entry)) return true;
+    const completed = loadJSON(TEST_CLEANUP_KEY, null);
+    return !!(completed && completed.entryId && entry.entryId === completed.entryId);
+  }
+
+  function cleanupRetiredCaddyTest() {
+    const key = fuelKey("offlineQueue", TEST_CAR, "ON");
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return;
+      const entries = JSON.parse(raw);
+      if (!Array.isArray(entries)) throw new Error("invalid queue");
+      const candidates = entries.filter(testEntryValuesMatch);
+      if (!candidates.length) return;
+      testQueueCleanup = { status: "ambiguous" };
+      // Never guess an ID, normalize an inconsistent record, or delete multiple candidates.
+      if (candidates.length !== 1) return;
+      const entry = candidates[0];
+      if (typeof entry.entryId !== "string" || !entry.entryId.trim()) return;
+      if ([entry.fuel, entry.fuelId].filter(value => value !== undefined).some(value => value !== "ON")) return;
+      if (![entry.carId, entry.vehicleId, entry.profileId].some(Boolean)) return;
+      if ([entry.carId, entry.vehicleId, entry.profileId].filter(value => value !== undefined)
+        .some(value => normalizeCarId(value) !== TEST_CAR)) return;
+      const completed = JSON.parse(localStorage.getItem(TEST_CLEANUP_KEY) || "null");
+      if (completed && completed.entryId !== entry.entryId) return;
+      let occurrences = 0;
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const otherKey = localStorage.key(index);
+        if (!otherKey || !otherKey.startsWith(PREFIX + "__car__") || !otherKey.endsWith("__offlineQueue")) continue;
+        const otherEntries = JSON.parse(localStorage.getItem(otherKey));
+        if (!Array.isArray(otherEntries)) return;
+        occurrences += otherEntries.filter(item => item && item.entryId === entry.entryId).length;
+      }
+      if (occurrences !== 1) return;
+      const receipt = JSON.parse(localStorage.getItem(fuelKey("pendingReceipt", TEST_CAR, "ON")) || "null");
+      if (receipt && receipt.entryId === entry.entryId) return;
+      if (localStorage.getItem(PREFIX + "__balance__GOSIA__tx__" + entry.entryId) !== null) return;
+      // A single-key update preserves all unrelated queue items and all other storage.
+      if (localStorage.getItem(key) !== raw) return;
+      localStorage.setItem(key, JSON.stringify(entries.filter(item => item !== entry)));
+      testQueueCleanup = { status: "removed", entryId: entry.entryId };
+      saveJSON(TEST_CLEANUP_KEY, { entryId: entry.entryId, completedAt: new Date().toISOString() });
+    } catch (error) {
+      if (testQueueCleanup.status !== "removed") testQueueCleanup = { status: "error" };
+    }
+  }
+
+  cleanupRetiredCaddyTest();
 
   let activeUserId = normalizeUserId(localStorage.getItem(DEVICE_KEYS.activeUser) || "BG");
   let activeCarId = normalizeCarForUser(localStorage.getItem(userLastCarKey(activeUserId)) || "BG", activeUserId);
@@ -795,6 +866,8 @@
     saveResults,
     saveSheetConfig,
     getSheetSnapshot,
-    getMigrationDiagnostics
+    getMigrationDiagnostics,
+    isRetiredTestEntry,
+    getTestQueueCleanup: function () { return Object.assign({}, testQueueCleanup); }
   };
 })();

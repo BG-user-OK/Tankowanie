@@ -2796,6 +2796,11 @@
     setActiveEdit(activeEdit);
     showProfileChooser();
     registerServiceWorker();
+    const cleanup = storage.getTestQueueCleanup();
+    if (cleanup.status === "removed") toast("Usunięto jeden stary wpis testowy Caddy.");
+    else if (cleanup.status === "ambiguous" || cleanup.status === "error") {
+      toast("Nie usunięto wpisu testowego Caddy: brak jednoznacznego dopasowania lub błąd zapisu. Wysyłka tego wpisu jest zablokowana.");
+    }
     window.setTimeout(maybeAutoRefreshConfig, 300);
     window.setInterval(function () {
       if (ensureDefaultDateForEmptyDraft()) {

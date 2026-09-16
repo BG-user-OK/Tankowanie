@@ -162,6 +162,9 @@
   }
 
   async function submitEntry(settings, entry) {
+    if (window.TankowanieStorage.isRetiredTestEntry(entry, settings.carId || settings.vehicleId || settings.profileId)) {
+      throw new Error("Stary wpis testowy Caddy jest zablokowany. Nie został wysłany.");
+    }
     return postAction(settings, "submitRefuel", "entry", entry);
   }
 
