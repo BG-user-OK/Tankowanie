@@ -181,8 +181,8 @@
     els.balanceValue.textContent = state.value === null ? "--" : money(state.value) + " zł";
     els.balanceBox.classList.toggle("negative", state.value !== null && state.value < 0);
     els.balanceBox.classList.toggle("positive", state.value !== null && state.value >= 0);
-    const balanceStatus = state.pending ? "oczekuje: " + state.pending
-      : balanceError ? "brak aktualizacji: " + balanceError : state.fetched ? "" : "pobieranie";
+    const balanceStatus = balanceError ? "brak aktualizacji: " + balanceError
+      : state.pending ? "oczekuje: " + state.pending : state.fetched ? "" : "pobieranie";
     els.balanceStatus.textContent = balanceStatus;
     els.balanceBox.title = balanceError || balanceStatus;
     els.depositButton.disabled = !!busyAction || depositMode;
@@ -1137,7 +1137,13 @@
     if (message.includes("Receipt scan is too large")) {
       return "Skan jest za duży. Zrób zdjęcie z bliższa albo słabszą jakością.";
     }
-    if (message.includes("Receipt row does not match")) {
+    if (message.includes("Fallback receipt target is occupied")) {
+      return "Nie można dodać skanu do kolejki awaryjnej: wskazany wiersz jest już zajęty.";
+    }
+    if (message.includes("Receipt fallback is not allowed")) {
+      return "Dla tego paliwa skany paragonów nie są wysyłane.";
+    }
+    if (message.includes("ORPHAN_RECEIPT_ROW") || message.includes("Receipt row does not match")) {
       return "Skan nie pasuje do wiersza tankowania w arkuszu.";
     }
     if (message.includes("Authorization") || message.includes("DriveApp") || message.includes("permission")) {
@@ -1968,7 +1974,7 @@
     if (activeProfileId === "CLIO3") return entry.fuel === "E95";
     if (isOnProfile(activeProfileId)) return entry.fuel === "ON";
     if (entry.fuel === "LPG") return true;
-    if (entry.fuel === "E98") return !isCombinedE98WithCurrentLpg(entry);
+    if (entry.fuel === "E98") return false;
     return false;
   }
 
@@ -2217,7 +2223,7 @@
     const previousBusy = busyAction;
     setBusy(previousBusy || "scan");
     try {
-      const receipt = await sync.uploadReceiptScan(syncSettings, {
+      const receiptPayload = {
         entryId: currentRecord.entryId,
         profileId: currentRecord.profileId || activeProfile().profileId,
         carId: currentRecord.carId || activeProfileId,
@@ -2231,7 +2237,15 @@
         fileName: currentRecord.fileName || receiptFileName(currentRecord),
         mimeType: currentRecord.mimeType || "image/jpeg",
         base64: currentRecord.base64
-      });
+      };
+      let receipt;
+      try {
+        receipt = await sync.uploadReceiptScan(syncSettings, receiptPayload);
+      } catch (error) {
+        const message = String(error && error.message ? error.message : error || "");
+        if (!message.includes("ORPHAN_RECEIPT_ROW")) throw error;
+        receipt = await sync.uploadOrphanReceiptScan(syncSettings, receiptPayload);
+      }
       clearPendingScan(currentRecord.entryId);
       saveAll();
       render();

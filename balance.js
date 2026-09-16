@@ -43,8 +43,11 @@
     const snapshot = read(CACHE, null);
     const unresolved = pending().filter(tx => !snapshot || !snapshot.transactions || snapshot.transactions[tx.id] !== "done");
     return {
-      value: snapshot ? snapshot.balance + unresolved.reduce((sum, tx) => sum + tx.delta, 0) : null,
+      // The server snapshot is the actual balance. Pending transactions remain a status only:
+      // adding them here can double-count a completed write whose acknowledgement was lost.
+      value: snapshot ? snapshot.balance : null,
       pending: unresolved.length,
+      pendingDelta: unresolved.reduce((sum, tx) => sum + tx.delta, 0),
       fetched: !!snapshot
     };
   }

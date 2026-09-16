@@ -172,6 +172,10 @@
     return postAction(settings, "uploadReceiptScan", "receipt", receiptScan);
   }
 
+  async function uploadOrphanReceiptScan(settings, receiptScan) {
+    return postAction(settings, "uploadOrphanReceiptScan", "receipt", receiptScan);
+  }
+
   window.TankowanieSync = {
     getBalance: async function (settings, transactionIds) {
       const response = await jsonpRequest(settings.endpointUrl, withClientMeta({
@@ -190,6 +194,7 @@
     ping,
     debugProps,
     submitEntry,
-    uploadReceiptScan
+    uploadReceiptScan,
+    uploadOrphanReceiptScan
   };
 })();
