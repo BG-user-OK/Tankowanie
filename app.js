@@ -181,9 +181,10 @@
     els.balanceValue.textContent = state.value === null ? "--" : money(state.value) + " zł";
     els.balanceBox.classList.toggle("negative", state.value !== null && state.value < 0);
     els.balanceBox.classList.toggle("positive", state.value !== null && state.value >= 0);
-    els.balanceStatus.textContent = state.pending ? "oczekuje: " + state.pending
-      : balanceError ? "brak aktualizacji" : state.fetched ? "" : "pobieranie";
-    els.balanceBox.title = balanceError;
+    const balanceStatus = state.pending ? "oczekuje: " + state.pending
+      : balanceError ? "brak aktualizacji: " + balanceError : state.fetched ? "" : "pobieranie";
+    els.balanceStatus.textContent = balanceStatus;
+    els.balanceBox.title = balanceError || balanceStatus;
     els.depositButton.disabled = !!busyAction || depositMode;
     els.cancelDepositButton.disabled = !!busyAction;
     if (depositMode) {
@@ -392,6 +393,18 @@
     const month = ROMAN_MONTHS[parts[1] - 1] || "";
     const year = String(parts[0]).slice(-2);
     return `${day}.${month}'${year}`;
+  }
+
+  function hasEnteredPumpValue() {
+    const value = calculationSource() === "pumpTotal" ? draft.pumpTotal : draft.pumpPrice;
+    return Number(parseDecimal(value)) > 0;
+  }
+
+  function isCompleteRefuelDraft() {
+    const liters = parseDecimal(draft.liters);
+    const odometer = Number(draft.odometer);
+    return Number(liters) > 0 && hasEnteredPumpValue()
+      && (isBalanceMode() || (Number.isInteger(odometer) && odometer > 0));
   }
 
   function isRefuelDraftEmpty() {
@@ -1505,27 +1518,32 @@
     if (!els.refreshButton || !els.saveButton) return;
     const record = activeReceiptScan();
     const active = !!record;
+    const queued = queue.length > 0 || pendingDeposits().length > 0;
+    const completeDraft = isCompleteRefuelDraft();
+    const needsAttention = queued || active || completeDraft;
     els.refreshButton.classList.remove("scan-pending", "scan-abandon-pending");
     els.refreshButton.textContent = "☁↓";
     els.refreshButton.title = "Pobierz dane z arkusza";
     els.refreshButton.setAttribute("aria-label", "Pobierz dane");
-    els.saveButton.classList.toggle("scan-pending", active);
-    if ((queue.length || pendingDeposits().length) && isRefuelDraftEmpty()) {
-      els.saveButton.title = active ? "Wyślij kolejkę i skan" : "Wyślij kolejkę";
+    els.saveButton.classList.toggle("scan-pending", needsAttention && !busyAction);
+    if (queued) {
+      els.saveButton.title = completeDraft ? "Wyślij kolejkę, wpis i skan" : active ? "Wyślij kolejkę i skan" : "Wyślij kolejkę";
       els.saveButton.setAttribute("aria-label", els.saveButton.title);
       return;
     }
     if (active) {
-      els.saveButton.title = !isRefuelDraftEmpty()
-        ? "Wyślij wpis; skan czeka"
-        : record.status === "ready"
-        ? "Wyślij skan paragonu"
-        : "Dodaj skan paragonu";
+      els.saveButton.title = completeDraft ? "Najpierw wyślij oczekujący skan" : record.status === "ready"
+        ? "Wyślij skan paragonu" : "Dodaj skan paragonu";
       els.saveButton.setAttribute("aria-label", els.saveButton.title);
       return;
     }
-    els.saveButton.title = "Wyślij do arkusza";
-    els.saveButton.setAttribute("aria-label", "Zapisz lub wyślij");
+    if (completeDraft) {
+      els.saveButton.title = "Wyślij wpis do arkusza";
+      els.saveButton.setAttribute("aria-label", els.saveButton.title);
+      return;
+    }
+    els.saveButton.title = "Pobierz dane z arkusza";
+    els.saveButton.setAttribute("aria-label", "Pobierz dane");
   }
 
   function configRequestContext() {
@@ -2260,6 +2278,25 @@
     showReceiptSource(record.entryId);
   }
 
+  async function handlePrimaryCloudAction() {
+    if (busyAction || depositMode) return;
+    if (queue.length || pendingDeposits().length) {
+      await syncQueue();
+      if (queue.length || pendingDeposits().length) return;
+    }
+    if (activeReceiptScan()) {
+      handleReceiptCloudAction();
+      return;
+    }
+    if (isCompleteRefuelDraft()) {
+      await saveEntry();
+      return;
+    }
+    refreshConfig().catch(function (error) {
+      toast(friendlySyncError(error) || "Nie udało się pobrać danych.");
+    });
+  }
+
   function abandonActiveReceiptScan() {
     const record = activeReceiptScan();
     if (!record) return;
@@ -2599,15 +2636,7 @@
     els.saveButton.addEventListener("click", function () {
       if (Date.now() < suppressReceiptActionClickUntil) return;
       playSound("other");
-      if ((queue.length || pendingDeposits().length) && isRefuelDraftEmpty()) {
-        syncQueue();
-        return;
-      }
-      if (activeReceiptScan() && isRefuelDraftEmpty()) {
-        handleReceiptCloudAction();
-        return;
-      }
-      saveEntry();
+      handlePrimaryCloudAction();
     });
     els.saveButton.addEventListener("pointerdown", startReceiptCloudLongPress);
     els.saveButton.addEventListener("pointerup", stopReceiptCloudLongPress);

@@ -1,4 +1,4 @@
-const CACHE_NAME = "tankowanie-v4.2.1";
+const CACHE_NAME = "tankowanie-v4.2.2";
 const APP_SHELL = [
   "./",
   "./index.html",
