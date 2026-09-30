@@ -59,7 +59,7 @@
       defaultFuel: "LPG",
       footerText: "Clio5-Iwona",
       receiptFilePrefix: "CLIO5_IWONA_ORLEN",
-      supportsFastSecondFuel: false,
+      supportsFastSecondFuel: true,
       showFuelImage: true,
       imageFuels: ["LPG"],
       footerImage: "grafiki/Clio5-Orlen.bmp",
@@ -144,6 +144,10 @@
   let suppressReceiptActionClickUntil = 0;
   let configRequestSequence = 0;
   const latestConfigRequestByCar = {};
+  const activeQueueSyncs = new Map();
+  const receiptUploads = new Set();
+  const queueErrorsByCar = new Map();
+  const MULTI_FUEL_WINDOW_MS = 60 * 60 * 1000;
 
   function $(id) {
     return document.getElementById(id);
@@ -280,11 +284,11 @@
         await flushDeposits();
         setBusy("");
       }
-      if (queue.length) await syncRefuelQueue();
+      if (queue.length) await syncRefuelQueue(activeProfileId);
     } catch (error) {
       toast(friendlySyncError(error));
     } finally {
-      setBusy("");
+      if (busyAction === "deposit") setBusy("");
       await refreshBalance();
       render();
     }
@@ -981,6 +985,7 @@
     depositMode = false;
     depositAmount = 0;
     if (options && options.saveCurrent) saveAll();
+    if (activeProfileId !== profileId) storage.saveMultiFuelSession(null, activeProfileId);
     if (options && options.userId) activeUserId = storage.setActiveUser(options.userId);
     else activeUserId = storage.getActiveUser();
     activeProfileId = storage.setActiveCar(profileId);
@@ -1486,7 +1491,12 @@
       els.profileSwitchButton.title = "Wybierz użytkownika i auto";
       els.profileSwitchButton.setAttribute("aria-label", els.profileSwitchButton.title);
     }
-    els.syncState.textContent = results.lastSyncAt ? `sync ${results.lastSyncAt}` : "brak sync";
+    const sending = activeQueueSyncs.get(activeProfileId);
+    els.syncState.textContent = sending ? `wys. ${sending.fuel}`
+      : queueErrorsByCar.has(activeProfileId) ? "błąd"
+        : results.lastSyncAt ? `sync ${results.lastSyncAt}` : "brak sync";
+    els.syncState.title = sending ? `Wysyłam ${sending.fuel} w tle` : queueErrorsByCar.get(activeProfileId) || "";
+    els.syncState.classList.toggle("sync-active", !!sending);
     els.queueState.textContent = `q: ${queue.length}`;
     renderQueue();
     renderReceiptScanState();
@@ -1532,19 +1542,21 @@
     els.refreshButton.title = "Pobierz dane z arkusza";
     els.refreshButton.setAttribute("aria-label", "Pobierz dane");
     els.saveButton.classList.toggle("scan-pending", needsAttention && !busyAction);
+    if (completeDraft) {
+      els.saveButton.title = "Wyślij bieżące tankowanie";
+      els.saveButton.setAttribute("aria-label", els.saveButton.title);
+      return;
+    }
     if (queued) {
-      els.saveButton.title = completeDraft ? "Wyślij kolejkę, wpis i skan" : active ? "Wyślij kolejkę i skan" : "Wyślij kolejkę";
+      els.saveButton.title = activeQueueSyncs.has(activeProfileId)
+        ? active ? "Dodaj skan paragonu" : "Wysyłanie trwa w tle"
+        : "Wyślij kolejkę";
       els.saveButton.setAttribute("aria-label", els.saveButton.title);
       return;
     }
     if (active) {
       els.saveButton.title = completeDraft ? "Najpierw wyślij oczekujący skan" : record.status === "ready"
         ? "Wyślij skan paragonu" : "Dodaj skan paragonu";
-      els.saveButton.setAttribute("aria-label", els.saveButton.title);
-      return;
-    }
-    if (completeDraft) {
-      els.saveButton.title = "Wyślij wpis do arkusza";
       els.saveButton.setAttribute("aria-label", els.saveButton.title);
       return;
     }
@@ -1801,15 +1813,17 @@
   function normalizeReceiptRecord(record) {
     const source = record && typeof record === "object" ? record : {};
     const carId = storage.normalizeCarId(source.carId || source.vehicleId || source.profileId) || activeProfileId;
-    const fuel = normalizeFuelId(source.fuelId || source.fuel, primaryFuel());
+    const car = storage.getCarDefinition(carId);
+    const fuel = String(source.fuelId || source.fuel || "").toUpperCase();
+    const selectedFuel = car.fuels.includes(fuel) ? fuel : car.defaultFuel;
     return {
       entryId: String(source.entryId || ""),
       profileId: String(source.profileId || storage.profileIdForCar(carId)),
       carId,
       vehicleId: carId,
       userId: String(source.userId || activeUserId),
-      fuelId: fuel,
-      fuel: isFuelAvailable(fuel) ? fuel : primaryFuel(),
+      fuelId: selectedFuel,
+      fuel: selectedFuel,
       row: source.row ? Number(source.row) : "",
       refuelDate: normalizeDateIso(source.refuelDate || source.date) || "",
       odometer: source.odometer ? Number(source.odometer) : "",
@@ -1859,30 +1873,79 @@
     return null;
   }
 
-  function findReceiptScan(entryId) {
+  function findReceiptScan(entryId, carId) {
     const id = String(entryId || "");
     if (!id) return null;
-    return pendingScan && pendingScan.entryId === id ? pendingScan : null;
+    if (pendingScan && pendingScan.entryId === id && (!carId || pendingScan.carId === carId)) return pendingScan;
+    const record = storage.getReceiptScans(carId).find(function (item) { return item.entryId === id; });
+    return record ? normalizeReceiptRecord(record) : null;
   }
 
   function upsertReceiptScan(record) {
     const normalized = normalizeReceiptRecord(record);
     if (!normalized.entryId || !isActiveReceiptStatus(normalized.status)) return null;
-    pendingScan = normalized;
-    return pendingScan;
+    storage.savePendingScan(normalized);
+    if (normalized.carId === activeProfileId) pendingScan = normalized;
+    return normalized;
   }
 
-  function clearPendingScan(entryId) {
-    if (entryId && (!pendingScan || pendingScan.entryId !== entryId)) return;
-    const cleared = pendingScan;
-    pendingScan = null;
+  function clearPendingScan(entryId, carId) {
+    const cleared = findReceiptScan(entryId, carId);
+    if (!cleared) return;
     if (cleared) storage.clearPendingScan(cleared.carId, cleared.fuel, cleared.entryId);
     pendingScan = migratePendingScan(storage.getPendingScan(), storage.getReceiptScans());
     if (receiptPromptEntryId && (!entryId || receiptPromptEntryId === entryId)) receiptPromptEntryId = "";
   }
 
   function activeReceiptScan() {
+    pendingScan = migratePendingScan(storage.getPendingScan(), storage.getReceiptScans());
     return pendingScan && isActiveReceiptStatus(pendingScan.status) ? pendingScan : null;
+  }
+
+  function activeMultiFuelSession(carId) {
+    const car = carId || activeProfileId;
+    const session = storage.getMultiFuelSession(car);
+    if (!session || session.carId !== car) return null;
+    const age = Date.now() - Number(session.startedAt || 0);
+    if (age < 0 || age > MULTI_FUEL_WINDOW_MS || session.receiptStatus === "completed") {
+      storage.saveMultiFuelSession(null, car);
+      return null;
+    }
+    return session;
+  }
+
+  function stageMultiFuelEntry(entry) {
+    const profile = PROFILES[entry.carId];
+    if (!profile || !profile.supportsFastSecondFuel || profile.fuels.length < 2) return null;
+    let session = activeMultiFuelSession(entry.carId);
+    if (!session || session.fuelIds.includes(entry.fuel)) {
+      session = {
+        sessionId: storage.createId("fuel-session"),
+        carId: entry.carId,
+        startedAt: Date.now(),
+        entryIds: [],
+        fuelIds: [],
+        sharedOdometer: entry.odometer,
+        receiptStatus: "pending",
+        receiptAnchorEntryId: "",
+        receiptAnchorFuelId: ""
+      };
+    }
+    session.entryIds.push(entry.entryId);
+    session.fuelIds.push(entry.fuel);
+    if (entry.fuel === "LPG" || !session.receiptAnchorEntryId) {
+      session.receiptAnchorEntryId = entry.entryId;
+      session.receiptAnchorFuelId = entry.fuel;
+    }
+    storage.saveMultiFuelSession(session, entry.carId);
+    return session;
+  }
+
+  function closeReceiptSession(record) {
+    const session = storage.getMultiFuelSession(record.carId);
+    if (session && session.sessionId === record.sessionId) {
+      storage.saveMultiFuelSession(null, record.carId);
+    }
   }
 
   function rememberRecentRefuel(entry) {
@@ -1898,10 +1961,9 @@
   }
 
   function isRecentOtherFuelRefuel(targetFuel) {
-    const context = normalizeRecentRefuel(recentRefuel);
-    if (!context.fuel || context.fuel === targetFuel) return false;
-    if (!context.odometer || !context.savedAt) return false;
-    return Date.now() - context.savedAt <= 60 * 60 * 1000;
+    const session = activeMultiFuelSession(activeProfileId);
+    return !!(session && session.sharedOdometer && !session.fuelIds.includes(targetFuel)
+      && session.fuelIds.length > 0);
   }
 
   function loadFuelState(targetFuel) {
@@ -1924,6 +1986,7 @@
     if (!activeProfile().supportsFastSecondFuel) return false;
     if (!isRefuelDraftEmpty()) return false;
     if (!isRecentOtherFuelRefuel(targetFuel)) return false;
+    const session = activeMultiFuelSession(activeProfileId);
     draft = storage.saveDraft(draft);
     loadFuelState(targetFuel);
     if (!isRefuelDraftEmpty()) {
@@ -1931,14 +1994,13 @@
       return true;
     }
     captureEntryUndoSnapshot("fast-second-fuel", true);
-    draft.odometer = Number(recentRefuel.odometer);
+    draft.odometer = Number(session.sharedOdometer);
     draft.pumpPrice = null;
     draft.pumpTotal = null;
     draft.calculationSource = "";
     draft.discountPerLiter = null;
     draft.discountPerLiterEdited = false;
     draft.liters = "";
-    if (recentRefuel.refuelDate) draft.date = recentRefuel.refuelDate;
     saveAll();
     setActiveEdit("price", true);
     return true;
@@ -1980,23 +2042,32 @@
 
   function registerReceiptCandidate(entry, receipt, prompt) {
     if (!shouldTrackReceiptForEntry(entry)) return null;
-    const existing = findReceiptScan(entry.entryId) || {};
+    const session = activeMultiFuelSession(entry.carId);
+    const sessionReceipt = session && storage.getReceiptScans(entry.carId).find(function (scan) {
+      return scan.sessionId === session.sessionId;
+    });
+    if (sessionReceipt && sessionReceipt.entryId !== entry.entryId && entry.fuel !== "LPG") {
+      return normalizeReceiptRecord(sessionReceipt);
+    }
+    const reanchor = sessionReceipt && sessionReceipt.entryId !== entry.entryId && entry.fuel === "LPG";
+    const existing = reanchor ? sessionReceipt : findReceiptScan(entry.entryId, entry.carId) || {};
+    if (reanchor) storage.clearPendingScan(existing.carId, existing.fuel, existing.entryId);
     const record = upsertReceiptScan(Object.assign(existing, {
       entryId: entry.entryId,
-      profileId: activeProfile().profileId,
-      carId: activeProfileId,
-      vehicleId: activeProfileId,
-      userId: entry.userId || activeUserId,
+      profileId: entry.profileId,
+      carId: entry.carId,
+      vehicleId: entry.carId,
+      userId: entry.userId,
       fuelId: entry.fuel,
       fuel: entry.fuel,
-      row: receipt && receipt.row ? Number(receipt.row) : existing.row || "",
+      row: receipt && receipt.row ? Number(receipt.row) : reanchor ? "" : existing.row || "",
       refuelDate: entry.refuelDate,
       odometer: entry.odometer,
       status: existing.status || "pending",
-      sessionId: existing.sessionId || pageSessionId,
+      sessionId: session ? session.sessionId : existing.sessionId || pageSessionId,
       updatedAt: new Date().toISOString()
     }));
-    rememberLpgReceiptContext(entry);
+    if (entry.carId === activeProfileId) rememberLpgReceiptContext(entry);
     saveAll();
     render();
     if (prompt && record && (record.status === "pending" || record.status === "ready")) {
@@ -2007,7 +2078,8 @@
 
   function updateReceiptRowFromReceipt(receipt) {
     if (!receipt || !receipt.entryId) return null;
-    const record = findReceiptScan(receipt.entryId);
+    const carId = storage.normalizeCarId(receipt.carId || receipt.vehicleId || receipt.profileId);
+    const record = findReceiptScan(receipt.entryId, carId);
     if (!record) return null;
     if (receipt.fuel && record.fuel !== receipt.fuel) return null;
     record.row = receipt.row ? Number(receipt.row) : record.row || "";
@@ -2015,7 +2087,7 @@
     upsertReceiptScan(record);
     saveAll();
     render();
-    return findReceiptScan(receipt.entryId);
+    return findReceiptScan(receipt.entryId, carId);
   }
 
   function showReceiptDecision(entryId) {
@@ -2165,29 +2237,33 @@
   function receiptFileName(record) {
     const date = normalizeDateIso(record.refuelDate) || todayIso();
     const time = new Date().toTimeString().slice(0, 8).replace(/:/g, "-");
-    return `${activeProfile().receiptFilePrefix}_${date}_${time}.jpg`;
+    const profile = PROFILES[record.carId] || activeProfile();
+    return `${profile.receiptFilePrefix}_${date}_${time}.jpg`;
   }
 
   async function handleReceiptFileSelected(file) {
     const record = findReceiptScan(receiptPromptEntryId) || activeReceiptScan();
     if (!record || !file) return;
-    const ownsBusy = !busyAction;
     try {
-      if (ownsBusy) setBusy("scan");
       const imageData = await compressReceiptImage(file);
-      record.status = "ready";
-      record.base64 = imageData.base64;
-      record.mimeType = imageData.mimeType;
-      record.fileName = receiptFileName(record);
-      record.fileSize = imageData.fileSize;
-      record.error = "";
-      record.updatedAt = new Date().toISOString();
-      upsertReceiptScan(record);
+      const current = storage.getReceiptScans(record.carId).find(function (scan) {
+        return scan.sessionId && scan.sessionId === record.sessionId;
+      }) || findReceiptScan(record.entryId, record.carId) || record;
+      const ready = Object.assign({}, current, {
+        status: "ready",
+        base64: imageData.base64,
+        mimeType: imageData.mimeType,
+        fileName: receiptFileName(current),
+        fileSize: imageData.fileSize,
+        error: "",
+        updatedAt: new Date().toISOString()
+      });
+      upsertReceiptScan(ready);
       saveAll();
       hideReceiptDialog();
       render();
-      if (record.row && busyAction !== "save") {
-        await uploadReceiptScanRecord(record);
+      if (ready.row) {
+        await uploadReceiptScanRecord(ready);
       } else {
         toast("Skan zapisany lokalnie. Czeka na wiersz tankowania.");
       }
@@ -2195,13 +2271,13 @@
       toast(friendlySyncError(error) || "Nie udało się zapisać skanu.");
     } finally {
       clearReceiptFileInputs();
-      if (ownsBusy) setBusy("");
     }
   }
 
   async function uploadReceiptScanRecord(record) {
-    const currentRecord = findReceiptScan(record && record.entryId);
+    const currentRecord = findReceiptScan(record && record.entryId, record && record.carId);
     if (!currentRecord || currentRecord.status !== "ready") return null;
+    if (receiptUploads.has(currentRecord.entryId)) return null;
     const syncSettings = currentSettings({ persist: true });
     const missing = missingSettingsMessage(syncSettings);
     if (missing) {
@@ -2220,8 +2296,7 @@
       showReceiptSource(currentRecord.entryId);
       return null;
     }
-    const previousBusy = busyAction;
-    setBusy(previousBusy || "scan");
+    receiptUploads.add(currentRecord.entryId);
     try {
       const receiptPayload = {
         entryId: currentRecord.entryId,
@@ -2246,7 +2321,8 @@
         if (!message.includes("ORPHAN_RECEIPT_ROW")) throw error;
         receipt = await sync.uploadOrphanReceiptScan(syncSettings, receiptPayload);
       }
-      clearPendingScan(currentRecord.entryId);
+      clearPendingScan(currentRecord.entryId, currentRecord.carId);
+      closeReceiptSession(currentRecord);
       saveAll();
       render();
       toast("Skan paragonu wysłany.");
@@ -2260,7 +2336,7 @@
       toast(currentRecord.error || "Skan czeka lokalnie.");
       return null;
     } finally {
-      setBusy(previousBusy);
+      receiptUploads.delete(currentRecord.entryId);
     }
   }
 
@@ -2274,10 +2350,6 @@
   }
 
   function handleReceiptCloudAction() {
-    if (queue.length) {
-      syncQueue();
-      return;
-    }
     const record = activeReceiptScan();
     if (!record) {
       refreshConfig().catch(function (error) {
@@ -2292,18 +2364,22 @@
     showReceiptSource(record.entryId);
   }
 
-  async function handlePrimaryCloudAction() {
+  function handlePrimaryCloudAction() {
     if (busyAction || depositMode) return;
-    if (queue.length || pendingDeposits().length) {
-      await syncQueue();
-      if (queue.length || pendingDeposits().length) return;
+    if (isCompleteRefuelDraft()) {
+      saveEntry();
+      return;
+    }
+    if (pendingDeposits().length || (queue.length && !activeQueueSyncs.has(activeProfileId))) {
+      syncQueue();
+      return;
     }
     if (activeReceiptScan()) {
       handleReceiptCloudAction();
       return;
     }
-    if (isCompleteRefuelDraft()) {
-      await saveEntry();
+    if (activeQueueSyncs.has(activeProfileId)) {
+      toast("Wysyłanie trwa w tle.");
       return;
     }
     refreshConfig().catch(function (error) {
@@ -2315,13 +2391,15 @@
     const record = activeReceiptScan();
     if (!record) return;
     clearPendingScan(record.entryId);
+    closeReceiptSession(record);
     saveAll();
     render();
     toast("Skan paragonu pominięty.");
   }
 
   function startReceiptCloudLongPress(event) {
-    if (!activeReceiptScan() || busyAction) return;
+    if (!activeReceiptScan() || isCompleteRefuelDraft() || busyAction
+      || (queue.length && !activeQueueSyncs.has(activeProfileId))) return;
     receiptActionPointerActive = true;
     receiptActionLongDone = false;
     clearTimeout(receiptActionTimer);
@@ -2343,76 +2421,47 @@
     if (receiptActionLongDone) suppressReceiptActionClickUntil = Date.now() + 900;
   }
 
-  async function saveEntry() {
+  function saveEntry() {
     if (busyAction || depositMode) return;
     try {
       draft.date = els.refuelDate.value || todayIso();
-      const entry = buildEntry();
-      if (isBalanceMode()) {
-        entry.requestId = "refuel_" + entry.entryId;
-        draft.entryId = entry.entryId;
-        storage.saveDraft(draft);
-        if (!queue.some(item => item.entryId === entry.entryId)) queue.push(entry);
-        storage.saveQueue(queue);
-        balance.track(entry.entryId, "refuel", -Number(totals().paid.toFixed(2)), entry);
-        renderBalance();
+      const builtEntry = buildEntry();
+      const entry = Object.freeze(Object.assign({}, builtEntry, {
+        requestId: "refuel_" + builtEntry.entryId
+      }));
+      const existing = storage.getQueue(entry.carId);
+      if (existing.some(function (item) { return item.entryId === entry.entryId; })) {
+        toast("Ten wpis jest już w kolejce. Użyj chmury do ponowienia wysyłki.");
+        return;
       }
-      const entryContext = {
-        requestId: storage.createId("config"),
-        carId: entry.carId,
-        vehicleId: entry.carId,
-        profileId: entry.profileId,
-        fuelId: entry.fuel,
-        userId: entry.userId
-      };
-      latestConfigRequestByCar[entry.carId] = entryContext.requestId;
       const summary = buildLastSummary(entry);
       rememberEntryHints(entry);
+      storage.saveQueue(existing.concat(entry), entry.carId);
+      queue = storage.getQueue(entry.carId);
+      if (isBalanceMode()) {
+        balance.track(entry.entryId, "refuel", -Number(totals().paid.toFixed(2)), entry);
+      }
       setLastSummary(summary);
-      const syncSettings = currentSettings({ persist: true });
-      const missing = missingSettingsMessage(syncSettings);
+      const session = stageMultiFuelEntry(entry);
+      rememberRecentRefuel(entry);
+      const priorSessionReceipt = session && storage.getReceiptScans(entry.carId).find(function (scan) {
+        return scan.sessionId === session.sessionId;
+      });
       const trackReceipt = shouldTrackReceiptForEntry(entry);
       if (trackReceipt) registerReceiptCandidate(entry, null, false);
-      if (missing || !navigator.onLine) {
-        if (!queue.some(function (item) { return item.entryId === entry.entryId; })) queue.push(entry);
-        clearEntryDraft();
-        saveAll();
-        setActiveEdit("odometer");
-        if (trackReceipt) showReceiptDecision(entry.entryId);
-        toast(missing ? `Wpis w kolejce. ${missing}` : "Wpis zapisany w kolejce offline.");
-        return;
-      }
-      let savedReceipt = null;
-      try {
-        setBusy("save");
-        if (trackReceipt) showReceiptDecision(entry.entryId);
-        const readyConfig = await verifySyncReady(Object.assign({}, syncSettings, entryContext), entryContext);
-        applyConfig(readyConfig, entryContext);
-        const receipt = await sync.submitEntry(syncSettings, entry);
-        savedReceipt = receipt;
-        queue = queue.filter(item => item.entryId !== entry.entryId);
-        storage.saveQueue(queue);
-        applyReceipt(receipt, entryContext);
-        if (trackReceipt) registerReceiptCandidate(entry, savedReceipt, false);
-        await tryUploadReceiptScansForReceipt(receipt, syncSettings);
-      } catch (syncError) {
-        if (!queue.some(function (item) { return item.entryId === entry.entryId; })) queue.push(entry);
-        overlayQueuedHints();
-        clearEntryDraft();
-        saveAll();
-        setActiveEdit("odometer");
-        toast(`Wpis został w kolejce. ${friendlySyncError(syncError)}`);
-        return;
-      } finally {
-        setBusy("");
-        refreshBalance();
-      }
-      if (savedReceipt) await tryUploadReceiptScansForReceipt(savedReceipt, syncSettings);
-      rememberRecentRefuel(entry);
       clearEntryDraft();
       saveAll();
       setActiveEdit("odometer");
-      toast("Wpis wysłany do arkusza.");
+      if (trackReceipt && !priorSessionReceipt) showReceiptDecision(entry.entryId);
+      const syncSettings = currentSettings({ persist: true });
+      const missing = missingSettingsMessage(syncSettings);
+      if (!missing && navigator.onLine) {
+        syncRefuelQueue(entry.carId).catch(function (error) {
+          toast(friendlySyncError(error));
+        });
+      } else {
+        toast(missing ? `Wpis w kolejce. ${missing}` : "Wpis zapisany w kolejce offline.");
+      }
     } catch (error) {
       toast(error.message || "Nie udało się zapisać wpisu.");
     }
@@ -2445,62 +2494,76 @@
     render();
   }
 
-  async function syncRefuelQueue() {
-    if (!queue.length) {
-      toast("Kolejka jest pusta.");
-      return;
-    }
-    const syncSettings = currentSettings({ persist: true });
+  function syncRefuelQueue(carId) {
+    const car = carId || activeProfileId;
+    const running = activeQueueSyncs.get(car);
+    if (running) return running.promise;
+    const entries = storage.getQueue(car);
+    if (!entries.length) return Promise.resolve(0);
+    const storedSettings = currentSettings({ persist: true });
+    const syncSettings = Object.assign({}, storedSettings, {
+      carId: car,
+      vehicleId: car,
+      profileId: storage.profileIdForCar(car)
+    });
     const missing = missingSettingsMessage(syncSettings);
-    if (missing) {
-      toast(missing);
-      els.settingsPanel.hidden = false;
-      render();
-      return;
+    if (missing || !navigator.onLine) {
+      toast(missing || "Wpisy czekają na połączenie.");
+      return Promise.resolve(0);
     }
-    setBusy("sync");
-    const queueContext = configRequestContext();
-    latestConfigRequestByCar[queueContext.carId] = queueContext.requestId;
-    try {
-      const config = await verifySyncReady(Object.assign({}, syncSettings, queueContext), queueContext);
-      applyConfig(config, queueContext);
-    } catch (error) {
-      toast(friendlySyncError(error));
-      setBusy("");
-      return;
-    }
-    let sent = 0;
-    let remaining = [];
-    for (let index = 0; index < queue.length; index += 1) {
-      const entry = queue[index];
+    const state = { fuel: entries[0].fuel, promise: null };
+    const work = (async function () {
+      let sent = 0;
       try {
-        const entrySettings = Object.assign({}, syncSettings, {
-          profileId: entry.profileId || activeProfile().profileId,
-          carId: entry.carId || entry.vehicleId || activeProfileId,
-          vehicleId: entry.carId || entry.vehicleId || activeProfileId,
-          userId: entry.userId || activeUserId
-        });
-        const receipt = await sync.submitEntry(entrySettings, entry);
-        applyReceipt(receipt, {
-          requestId: queueContext.requestId,
-          carId: storage.normalizeCarId(entry.carId || entry.vehicleId || entry.profileId),
-          profileId: entry.profileId || activeProfile().profileId,
-          fuelId: entry.fuel
-        });
-        await tryUploadReceiptScansForReceipt(receipt, syncSettings);
-        sent += 1;
+        while (true) {
+          const entry = storage.getQueue(car)[0];
+          if (!entry) break;
+          state.fuel = entry.fuel;
+          if (car === activeProfileId) render();
+          const context = {
+            requestId: storage.createId("config"),
+            carId: car,
+            vehicleId: car,
+            profileId: entry.profileId || storage.profileIdForCar(car),
+            fuelId: entry.fuel,
+            userId: entry.userId
+          };
+          latestConfigRequestByCar[car] = context.requestId;
+          const entrySettings = Object.assign({}, syncSettings, context);
+          const config = await verifySyncReady(entrySettings, context);
+          applyConfig(config, context);
+          const receipt = await sync.submitEntry(entrySettings, Object.freeze(Object.assign({}, entry)));
+          if (receipt.entryId !== entry.entryId || storage.normalizeCarId(receipt.carId) !== car) {
+            throw new Error("Odpowiedź wysyłki dotyczy innego wpisu.");
+          }
+          storage.saveQueue(storage.getQueue(car).filter(function (item) {
+            return item.entryId !== entry.entryId;
+          }), car);
+          if (car === activeProfileId) queue = storage.getQueue(car);
+          applyReceipt(receipt, context);
+          sent += 1;
+          await tryUploadReceiptScansForReceipt(receipt, entrySettings);
+          if (car === activeProfileId) render();
+        }
+        queueErrorsByCar.delete(car);
+        if (sent) toast(`Wysłano wpisy: ${sent}.`);
       } catch (error) {
-        remaining = queue.slice(index);
-        toast(friendlySyncError(error) || "Część wpisów została w kolejce.");
-        break;
+        queueErrorsByCar.set(car, friendlySyncError(error));
+        toast(`Wpis pozostał w kolejce. ${friendlySyncError(error)}`);
+      } finally {
+        activeQueueSyncs.delete(car);
+        if (car === activeProfileId) {
+          queue = storage.getQueue(car);
+          render();
+          if (isBalanceMode()) refreshBalance();
+        }
       }
-    }
-    setBusy("");
-    if (!remaining.length) queue = [];
-    else queue = remaining;
-    saveAll();
-    render();
-    if (sent > 0) toast(`Wysłano wpisy: ${sent}.`);
+      return sent;
+    })();
+    state.promise = work;
+    activeQueueSyncs.set(car, state);
+    if (car === activeProfileId) render();
+    return work;
   }
 
   function applyKeypadValue(payload) {

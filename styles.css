@@ -1081,6 +1081,17 @@ body.editing-discount footer {
   white-space: nowrap;
 }
 
+.flota-status .sync-active::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: #facc15;
+  animation: actionBusyBlink 0.8s ease-in-out infinite;
+}
+
 .flota-actions {
   position: absolute;
   right: 8px;

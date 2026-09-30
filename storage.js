@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v4.3.1";
+  const APP_VERSION = "v4.4.0";
   const API_VERSION = "TANKOWANIE_API_V8";
   const PREFIX = "tankowanie_v2";
   const LEGACY_PREFIX = "tankowanie_v1";
@@ -126,6 +126,10 @@
 
   function workflowKey(carId) {
     return `${PREFIX}__car__${normalizeCarId(carId) || "BG"}__workflow`;
+  }
+
+  function receiptInboxKey(carId) {
+    return `${PREFIX}__car__${normalizeCarId(carId) || "BG"}__receiptInbox`;
   }
 
   function fuelKey(name, carId, fuelId) {
@@ -509,7 +513,9 @@
     const stored = loadJSON(workflowKey(car.carId), {});
     return {
       activeFuel: normalizeFuel(stored.activeFuel, car.carId),
-      recentRefuel: stored.recentRefuel && typeof stored.recentRefuel === "object" ? stored.recentRefuel : null
+      recentRefuel: stored.recentRefuel && typeof stored.recentRefuel === "object" ? stored.recentRefuel : null,
+      multiFuelSession: stored.multiFuelSession && typeof stored.multiFuelSession === "object"
+        ? stored.multiFuelSession : null
     };
   }
 
@@ -519,7 +525,9 @@
       activeFuel: normalizeFuel(workflow && workflow.activeFuel, car.carId),
       recentRefuel: workflow && workflow.recentRefuel && typeof workflow.recentRefuel === "object"
         ? workflow.recentRefuel
-        : null
+        : null,
+      multiFuelSession: workflow && workflow.multiFuelSession && typeof workflow.multiFuelSession === "object"
+        ? workflow.multiFuelSession : null
     });
   }
 
@@ -624,9 +632,15 @@
 
   function getReceiptScans(carId) {
     const car = carDefinition(carId || activeCarId);
-    return car.fuels.map(function (fuel) {
-      return loadJSON(fuelKey("pendingReceipt", car.carId, fuel), null);
-    }).filter(function (record) {
+    const inbox = loadJSON(receiptInboxKey(car.carId), []);
+    const records = Array.isArray(inbox) ? inbox.slice() : [];
+    car.fuels.forEach(function (fuel) {
+      const legacy = loadJSON(fuelKey("pendingReceipt", car.carId, fuel), null);
+      if (legacy && !records.some(function (record) { return record.entryId === legacy.entryId; })) {
+        records.push(legacy);
+      }
+    });
+    return records.filter(function (record) {
       return record && (record.status === "pending" || record.status === "ready");
     }).sort(function (a, b) { return receiptRank(b) - receiptRank(a); });
   }
@@ -651,17 +665,32 @@
       fuelId: fuel,
       fuel
     });
-    saveJSON(fuelKey("pendingReceipt", car.carId, fuel), value);
+    const inbox = loadJSON(receiptInboxKey(car.carId), []);
+    const records = Array.isArray(inbox) ? inbox.slice() : [];
+    const index = records.findIndex(function (record) { return record.entryId === value.entryId; });
+    if (index === -1) records.push(value);
+    else records[index] = value;
+    saveJSON(receiptInboxKey(car.carId), records);
+    const legacyKey = fuelKey("pendingReceipt", car.carId, fuel);
+    const legacy = loadJSON(legacyKey, null);
+    if (legacy && legacy.entryId === value.entryId) localStorage.removeItem(legacyKey);
     return value;
   }
 
   function clearPendingScan(carId, fuelId, entryId) {
+    if (!entryId) return false;
     const car = carDefinition(carId || activeCarId);
     const fuel = normalizeFuel(fuelId, car.carId);
+    const inbox = loadJSON(receiptInboxKey(car.carId), []);
+    if (Array.isArray(inbox)) {
+      const remaining = inbox.filter(function (record) {
+        return String(record.entryId || "") !== String(entryId);
+      });
+      if (remaining.length !== inbox.length) saveJSON(receiptInboxKey(car.carId), remaining);
+    }
     const key = fuelKey("pendingReceipt", car.carId, fuel);
     const current = loadJSON(key, null);
-    if (entryId && current && String(current.entryId || "") !== String(entryId)) return false;
-    localStorage.removeItem(key);
+    if (current && (!entryId || String(current.entryId || "") === String(entryId))) localStorage.removeItem(key);
     return true;
   }
 
@@ -691,6 +720,17 @@
     const car = carDefinition(carId || activeCarId);
     const workflow = getWorkflow(car.carId);
     workflow.recentRefuel = refuel && typeof refuel === "object" ? refuel : null;
+    saveWorkflow(workflow, car.carId);
+  }
+
+  function getMultiFuelSession(carId) {
+    return getWorkflow(carId).multiFuelSession;
+  }
+
+  function saveMultiFuelSession(session, carId) {
+    const car = carDefinition(carId || activeCarId);
+    const workflow = getWorkflow(car.carId);
+    workflow.multiFuelSession = session && typeof session === "object" ? session : null;
     saveWorkflow(workflow, car.carId);
   }
 
@@ -858,6 +898,8 @@
     saveLastSummary,
     getRecentRefuel,
     saveRecentRefuel,
+    getMultiFuelSession,
+    saveMultiFuelSession,
     getEntryUndoSnapshot,
     saveEntryUndoSnapshot,
     getHints,
