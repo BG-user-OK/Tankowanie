@@ -11,6 +11,9 @@
 # Local-only project context and exports
 /agents.md
 /AGENTS*.txt
+/UZYTKOWNICY.txt
+/README.md
+/tests/
 /apps-script/
 /poprzednie wersje/
 /v*/

@@ -81,6 +81,13 @@ button,
   gap: 8px;
 }
 
+.profile-chooser-back {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 8px;
+  font-size: 18px;
+}
+
 .profile-tiles.is-vehicle-mode {
   grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: var(--vehicle-tile-height, 72px);

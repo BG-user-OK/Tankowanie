@@ -15,7 +15,6 @@
       id: "BG",
       carId: "BG",
       profileId: "BG",
-      allowedUsers: ["BG"],
       label: "BG",
       switchLabel: "Auto",
       tileColor: "#2563eb",
@@ -33,7 +32,6 @@
       id: "CLIO3",
       carId: "CLIO3",
       profileId: "HANIA_CLIO3",
-      allowedUsers: ["BG", "HANIA", "MICHAL", "MAJA"],
       label: "Clio3",
       switchLabel: "Auto",
       tileColor: "#db2777",
@@ -51,7 +49,6 @@
       id: "CLIO5",
       carId: "CLIO5",
       profileId: "CLIO5_IWONA",
-      allowedUsers: ["BG", "IWONA", "HANIA"],
       label: "Clio5-Iwona",
       switchLabel: "Auto",
       tileColor: "#7c3aed",
@@ -69,7 +66,6 @@
       id: "E_LS995_VW_CADDY",
       carId: "E_LS995_VW_CADDY",
       profileId: "E_LS995_VW_CADDY",
-      allowedUsers: ["BG", "GOSIA", "GRZESIU"],
       label: "E-LS995 _VW_CADDY",
       switchLabel: "Auto",
       tileColor: "#16a34a",
@@ -88,7 +84,6 @@
       id: "OK2071C_AUDI",
       carId: "OK2071C_AUDI",
       profileId: "OK2071C_AUDI",
-      allowedUsers: ["BG", "GOSIA", "GRZESIU"],
       label: "OK2071C _AUDI",
       switchLabel: "Auto",
       tileColor: "#ca8a04",
@@ -104,17 +99,10 @@
       staticFuelLabel: "ON"
     }
   };
-  const USER_TILES = [
-    { id: "BG", label: "BG", active: true, color: "#2563eb" },
-    { id: "IWONA", label: "Iwona", active: true, color: "#7c3aed" },
-    { id: "HANIA", label: "Hania", active: true, color: "#db2777" },
-    { id: "MICHAL", label: "Michał", active: true, color: "#0891b2" },
-    { id: "MAJA", label: "Maja", active: true, color: "#ea580c" },
-    { id: "GOSIA", label: "Gosia", active: true, color: "#16a34a" },
-    { id: "GRZESIU", label: "Grzesiu", active: true, color: "#ca8a04" }
-  ];
+  const USER_TILES = storage.USERS;
   let chooserMode = "user";
   let chooserUserId = "";
+  let ownerJustBound = false;
   const ROMAN_MONTHS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
   let activeUserId = storage.getActiveUser();
   let activeProfileId = storage.getActiveCar();
@@ -198,7 +186,7 @@
   }
 
   async function refreshBalance() {
-    if (!isBalanceMode() || !navigator.onLine) return;
+    if (!storage.hasValidContext() || !isBalanceMode() || !navigator.onLine) return;
     const requestSettings = currentSettings();
     if (missingSettingsMessage(requestSettings)) return;
     const ids = balance.pending().map(tx => tx.id);
@@ -277,7 +265,7 @@
   }
 
   async function syncQueue() {
-    if (busyAction || depositMode) return;
+    if (!storage.hasValidContext() || busyAction || depositMode) return;
     try {
       if (pendingDeposits().length) {
         setBusy("deposit");
@@ -306,7 +294,7 @@
 
   function vehiclesForUser(userId) {
     const fromStorage = storage.getVehiclesForUser(userId);
-    return Array.isArray(fromStorage) ? fromStorage : ["BG"];
+    return Array.isArray(fromStorage) ? fromStorage : [];
   }
 
   function activeFuels() {
@@ -970,6 +958,7 @@
   }
 
   function saveAll() {
+    if (!storage.hasValidContext()) return;
     storage.saveSettings(settings);
     draft = storage.saveDraft(draft);
     storage.saveQueue(queue);
@@ -982,6 +971,8 @@
   }
 
   function reloadProfileState(profileId, options) {
+    const user = options && options.userId || storage.getActiveUser();
+    if (!storage.canAccessCar(user, profileId)) throw new Error("Ten użytkownik nie ma dostępu do tego auta.");
     depositMode = false;
     depositAmount = 0;
     if (options && options.saveCurrent) saveAll();
@@ -1038,7 +1029,9 @@
           kind: "vehicle"
         };
       })
-      : USER_TILES.map(function (tile) {
+      : USER_TILES.filter(function (tile) {
+        return storage.canSelectUser(tile.id);
+      }).map(function (tile) {
         return Object.assign({ kind: "user" }, tile);
       });
     els.profileTiles.classList.toggle("is-vehicle-mode", chooserMode === "vehicle");
@@ -1060,26 +1053,41 @@
         </button>
       `;
     }).join("");
+    if (els.profileChooserBackButton) {
+      els.profileChooserBackButton.hidden = chooserMode !== "vehicle" || storage.getDeviceUser() !== "BG";
+    }
   }
 
   function showProfileChooser() {
-    chooserMode = "user";
-    chooserUserId = "";
+    const owner = storage.getDeviceUser();
+    chooserMode = owner && owner !== "BG" ? "vehicle" : "user";
+    chooserUserId = chooserMode === "vehicle" ? owner : "";
     renderProfileChooser();
     if (els.profileChooser) els.profileChooser.hidden = false;
+    document.querySelector(".app-shell").inert = true;
   }
 
   function hideProfileChooser() {
     if (els.profileChooser) els.profileChooser.hidden = true;
+    document.querySelector(".app-shell").inert = false;
   }
 
   function chooseUser(userId) {
     const tile = USER_TILES.find(function (item) {
       return item.id === userId;
     });
-    if (!tile || !tile.active) {
+    if (!tile || !tile.active || !storage.canSelectUser(userId)) {
       toast("Ten profil będzie dostępny później.");
       return;
+    }
+    if (!storage.getDeviceUser()) {
+      try {
+        storage.bindDeviceUser(userId);
+        ownerJustBound = true;
+      } catch (error) {
+        toast(error.message);
+        return;
+      }
     }
     const vehicles = vehiclesForUser(userId);
     if (vehicles.length > 1) {
@@ -1088,11 +1096,20 @@
       renderProfileChooser();
       return;
     }
-    chooseVehicle(userId, vehicles[0] || "BG");
+    if (!vehicles.length) {
+      toast("Brak przypisanego auta.");
+      return;
+    }
+    chooseVehicle(userId, vehicles[0]);
   }
 
   function chooseVehicle(userId, vehicleId) {
-    reloadProfileState(vehicleId, { saveCurrent: true, userId });
+    if (!storage.canAccessCar(userId, vehicleId)) {
+      toast("Ten użytkownik nie ma dostępu do tego auta.");
+      return;
+    }
+    reloadProfileState(vehicleId, { saveCurrent: !ownerJustBound && storage.hasValidContext(), userId });
+    ownerJustBound = false;
     hideProfileChooser();
     toast(`${activeUserLabel()}: ${activeProfile().label}.`);
   }
@@ -1486,9 +1503,10 @@
       els.profileFooterText.textContent = footerText;
     }
     if (els.profileSwitchButton) {
-      els.profileSwitchButton.textContent = "Wybór";
+      const admin = storage.getDeviceUser() === "BG";
+      els.profileSwitchButton.textContent = admin ? "Wybór" : "Auto";
       els.profileSwitchButton.style.backgroundColor = userTile(activeUserId).color || profile.tileColor;
-      els.profileSwitchButton.title = "Wybierz użytkownika i auto";
+      els.profileSwitchButton.title = admin ? "Wybierz użytkownika i auto" : "Wybierz auto";
       els.profileSwitchButton.setAttribute("aria-label", els.profileSwitchButton.title);
     }
     const sending = activeQueueSyncs.get(activeProfileId);
@@ -1662,6 +1680,7 @@
   }
 
   async function refreshConfig(options) {
+    if (!storage.hasValidContext()) return null;
     const silent = !!(options && options.silent);
     const context = options && options.context ? options.context : configRequestContext();
     latestConfigRequestByCar[context.carId] = context.requestId;
@@ -1696,6 +1715,7 @@
   }
 
   function maybeAutoRefreshConfig() {
+    if (!storage.hasValidContext()) return;
     refreshBalance();
     const syncSettings = currentSettings();
     if (!syncSettings.endpointUrl || !syncSettings.pin || !navigator.onLine) return;
@@ -1711,7 +1731,7 @@
     const discount = effectiveDiscount();
     const source = calculationSource();
     const entryTotals = totals();
-    if (activeProfile().allowedUsers.indexOf(activeUserId) === -1) {
+    if (!storage.hasValidContext() || !storage.canAccessCar(activeUserId, activeProfileId)) {
       throw new Error("Ten użytkownik nie ma dostępu do tego auta.");
     }
     if (!isBalanceMode() && (!Number.isInteger(odometer) || odometer <= 0)) throw new Error("Uzupełnij licznik.");
@@ -2833,6 +2853,9 @@
         else if (button.dataset.vehicleId) chooseVehicle(chooserUserId || activeUserId, button.dataset.vehicleId);
       });
     }
+    if (els.profileChooserBackButton) {
+      els.profileChooserBackButton.addEventListener("click", showProfileChooser);
+    }
 
     if (els.profileSwitchButton) {
       els.profileSwitchButton.addEventListener("click", function () {
@@ -2846,7 +2869,7 @@
     [
       "balanceBox", "balanceValue", "balanceStatus", "depositButton", "depositPanel",
       "depositValue", "cancelDepositButton", "distanceBox", "resultBand",
-      "profileChooser", "profileTiles", "profileSwitchButton", "profileFooterText",
+      "profileChooser", "profileTiles", "profileChooserBackButton", "profileSwitchButton", "profileFooterText",
       "flotaImage", "flotaImageFallback",
       "settingsToggle", "onlineState", "syncState", "queueState", "monthlyAverage",
       "monthlyLabel", "monthlyHeading", "todayResultValue", "lastResultValue",
@@ -2900,7 +2923,15 @@
     keypadReady = true;
     bindEvents();
     setActiveEdit(activeEdit);
-    showProfileChooser();
+    if (!storage.getDeviceUser()) {
+      showProfileChooser();
+    } else if (!storage.hasValidContext()) {
+      chooseUser(storage.getDeviceUser());
+      if (chooserMode === "vehicle") {
+        els.profileChooser.hidden = false;
+        document.querySelector(".app-shell").inert = true;
+      }
+    }
     registerServiceWorker();
     const cleanup = storage.getTestQueueCleanup();
     if (cleanup.status === "removed") toast("Usunięto jeden stary wpis testowy Caddy.");
@@ -2909,7 +2940,7 @@
     }
     window.setTimeout(maybeAutoRefreshConfig, 300);
     window.setInterval(function () {
-      if (ensureDefaultDateForEmptyDraft()) {
+      if (storage.hasValidContext() && ensureDefaultDateForEmptyDraft()) {
         storage.saveDraft(draft);
         render();
       }

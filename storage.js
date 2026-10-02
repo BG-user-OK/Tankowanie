@@ -1,10 +1,20 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v4.4.0";
+  const APP_VERSION = "v4.5.0";
   const API_VERSION = "TANKOWANIE_API_V8";
   const PREFIX = "tankowanie_v2";
   const LEGACY_PREFIX = "tankowanie_v1";
+  const DEVICE_USER_KEY = "tankowanie__deviceUserId";
+  const USERS = [
+    { id: "BG", label: "BG", active: true, color: "#2563eb" },
+    { id: "IWONA", label: "Iwona", active: true, color: "#7c3aed" },
+    { id: "HANIA", label: "Hania", active: true, color: "#db2777" },
+    { id: "MICHAL", label: "Micha\u0142", active: true, color: "#0891b2" },
+    { id: "MAJA", label: "Maja", active: true, color: "#ea580c" },
+    { id: "GOSIA", label: "Gosia", active: true, color: "#16a34a" },
+    { id: "GRZESIU", label: "Grzesiu", active: true, color: "#ca8a04" }
+  ];
 
   const CARS = {
     BG: {
@@ -19,14 +29,14 @@
       profileId: "HANIA_CLIO3",
       fuels: ["E95"],
       defaultFuel: "E95",
-      allowedUsers: ["BG", "HANIA", "MICHAL", "MAJA"]
+      allowedUsers: ["BG", "HANIA", "IWONA", "MICHAL", "MAJA"]
     },
     CLIO5: {
       carId: "CLIO5",
       profileId: "CLIO5_IWONA",
       fuels: ["LPG", "E95"],
       defaultFuel: "LPG",
-      allowedUsers: ["BG", "IWONA", "HANIA"]
+      allowedUsers: ["BG", "IWONA", "HANIA", "MICHAL", "MAJA"]
     },
     E_LS995_VW_CADDY: {
       carId: "E_LS995_VW_CADDY",
@@ -65,16 +75,20 @@
     "draft"
   ];
 
-  function normalizeUserId(userId) {
+  function canonicalUserId(userId) {
     const raw = String(userId || "")
       .trim()
       .toUpperCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "");
-    if (["BG", "IWONA", "HANIA", "MICHAL", "MAJA", "GOSIA", "GRZESIU"].indexOf(raw) !== -1) {
+    if (USERS.some(function (user) { return user.id === raw; })) {
       return raw;
     }
-    return "BG";
+    return "";
+  }
+
+  function normalizeUserId(userId) {
+    return canonicalUserId(userId) || "BG";
   }
 
   function normalizeCarId(value) {
@@ -102,7 +116,7 @@
   }
 
   function vehiclesForUser(userId) {
-    const user = normalizeUserId(userId);
+    const user = canonicalUserId(userId);
     return CAR_IDS.filter(function (carId) {
       return CARS[carId].allowedUsers.indexOf(user) !== -1;
     });
@@ -111,7 +125,7 @@
   function normalizeCarForUser(carId, userId) {
     const allowed = vehiclesForUser(userId);
     const normalized = normalizeCarId(carId);
-    return allowed.indexOf(normalized) !== -1 ? normalized : (allowed[0] || "BG");
+    return allowed.indexOf(normalized) !== -1 ? normalized : (allowed[0] || "");
   }
 
   function normalizeFuel(fuelId, carId) {
@@ -453,16 +467,56 @@
 
   cleanupRetiredCaddyTest();
 
-  let activeUserId = normalizeUserId(localStorage.getItem(DEVICE_KEYS.activeUser) || "BG");
-  let activeCarId = normalizeCarForUser(localStorage.getItem(userLastCarKey(activeUserId)) || "BG", activeUserId);
-  localStorage.setItem(DEVICE_KEYS.activeUser, activeUserId);
-  localStorage.setItem(userLastCarKey(activeUserId), activeCarId);
+  // Ownership is explicit and independent of storage-schema and release versions.
+  let activeUserId = getDeviceUser() || normalizeUserId(localStorage.getItem(DEVICE_KEYS.activeUser));
+  let rememberedCar = localStorage.getItem(userLastCarKey(activeUserId));
+  let activeCarId = normalizeCarForUser(rememberedCar, activeUserId);
+  let carSelectionRequired = !rememberedCar || !userCanAccessCar(activeUserId, rememberedCar);
+  if (getDeviceUser()) localStorage.setItem(DEVICE_KEYS.activeUser, activeUserId);
+
+  function getDeviceUser() {
+    return canonicalUserId(localStorage.getItem(DEVICE_USER_KEY));
+  }
+
+  function bindDeviceUser(userId) {
+    const user = canonicalUserId(userId);
+    const owner = getDeviceUser();
+    if (!user || (owner && owner !== user)) throw new Error("Nie można zmienić właściciela tej instalacji.");
+    if (!owner) {
+      localStorage.setItem(DEVICE_USER_KEY, user);
+      carSelectionRequired = true;
+    }
+    return user;
+  }
+
+  function canSelectUser(userId) {
+    const owner = getDeviceUser();
+    const user = canonicalUserId(userId);
+    return !!user && (!owner || owner === "BG" || owner === user);
+  }
+
+  function userCanAccessCar(userId, carId) {
+    if (!String(carId || "").trim()) return false;
+    const car = normalizeCarId(carId);
+    return !!car && vehiclesForUser(userId).indexOf(car) !== -1;
+  }
+
+  function canAccessCar(userId, carId) {
+    return !!getDeviceUser() && canSelectUser(userId) && userCanAccessCar(userId, carId);
+  }
+
+  function hasValidContext() {
+    return !carSelectionRequired && canAccessCar(activeUserId, activeCarId);
+  }
 
   function setActiveUser(userId) {
-    activeUserId = normalizeUserId(userId);
-    activeCarId = normalizeCarForUser(localStorage.getItem(userLastCarKey(activeUserId)) || "", activeUserId);
+    const user = canonicalUserId(userId);
+    if (!getDeviceUser() || !canSelectUser(user)) throw new Error("Ten telefon nie może wybrać tego użytkownika.");
+    activeUserId = user;
+    const remembered = localStorage.getItem(userLastCarKey(activeUserId));
+    activeCarId = normalizeCarForUser(remembered, activeUserId);
+    carSelectionRequired = !remembered || !userCanAccessCar(activeUserId, remembered);
     localStorage.setItem(DEVICE_KEYS.activeUser, activeUserId);
-    localStorage.setItem(userLastCarKey(activeUserId), activeCarId);
     return activeUserId;
   }
 
@@ -475,8 +529,10 @@
   }
 
   function setActiveCar(carId) {
-    activeCarId = normalizeCarForUser(carId, activeUserId);
+    if (!canAccessCar(activeUserId, carId)) throw new Error("Ten użytkownik nie ma dostępu do tego auta.");
+    activeCarId = normalizeCarId(carId);
     localStorage.setItem(userLastCarKey(activeUserId), activeCarId);
+    carSelectionRequired = false;
     return activeCarId;
   }
 
@@ -867,12 +923,18 @@
   window.TankowanieStorage = {
     APP_VERSION,
     API_VERSION,
+    USERS,
     CARS,
     createId,
     normalizeCarId,
     profileIdForCar,
     getCarDefinition: carDefinition,
     getDeviceId,
+    getDeviceUser,
+    bindDeviceUser,
+    canSelectUser,
+    canAccessCar,
+    hasValidContext,
     getSettings,
     saveSettings,
     getActiveUser,
