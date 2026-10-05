@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "v4.5.0";
+  const APP_VERSION = "v4.5.1";
   const API_VERSION = "TANKOWANIE_API_V8";
   const PREFIX = "tankowanie_v2";
   const LEGACY_PREFIX = "tankowanie_v1";
@@ -242,10 +242,6 @@
       if (key && key.indexOf(LEGACY_PREFIX) === 0) keys.push(key);
     }
 
-    const oldSettings = localStorage.getItem(`${LEGACY_PREFIX}_settings`);
-    if (localStorage.getItem(DEVICE_KEYS.settings) === null && oldSettings !== null) {
-      localStorage.setItem(DEVICE_KEYS.settings, oldSettings);
-    }
     const oldDeviceId = localStorage.getItem(`${LEGACY_PREFIX}_device_id`);
     if (localStorage.getItem(DEVICE_KEYS.id) === null && oldDeviceId) {
       localStorage.setItem(DEVICE_KEYS.id, oldDeviceId);
@@ -394,6 +390,7 @@
     });
   }
 
+  ensureIntegrationSettings();
   migrateLegacyData();
 
   const TEST_CLEANUP_KEY = PREFIX + "__migration__retired_caddy_test_20260716";
@@ -553,15 +550,71 @@
     return id;
   }
 
-  function getSettings() {
-    return Object.assign({ endpointUrl: "", pin: "" }, loadJSON(DEVICE_KEYS.settings, {}));
+  function settingsRecord(key) {
+    const record = loadJSON(key, {});
+    return record && typeof record === "object" && !Array.isArray(record) ? record : {};
   }
 
-  function saveSettings(settings) {
-    saveJSON(DEVICE_KEYS.settings, {
-      endpointUrl: String(settings && settings.endpointUrl || "").trim(),
-      pin: String(settings && settings.pin || "").trim()
+  function settingsValue(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  function clearedSettingsFields(record) {
+    return Array.isArray(record.clearedFields)
+      ? record.clearedFields.filter(function (field) { return field === "endpointUrl" || field === "pin"; })
+      : [];
+  }
+
+  function ensureIntegrationSettings() {
+    const record = settingsRecord(DEVICE_KEYS.settings);
+    const legacy = settingsRecord(`${LEGACY_PREFIX}_settings`);
+    const cleared = clearedSettingsFields(record);
+    const recovered = Object.assign({}, record);
+    let changed = false;
+    ["endpointUrl", "pin"].forEach(function (field) {
+      if (settingsValue(record[field]) || cleared.indexOf(field) !== -1) return;
+      const value = settingsValue(legacy[field]);
+      if (!value) return;
+      if (field === "endpointUrl") {
+        try {
+          const url = new URL(value);
+          if (url.protocol !== "https:" && url.protocol !== "http:") return;
+        } catch (error) { return; }
+      }
+      recovered[field] = value;
+      changed = true;
     });
+    if (changed) {
+      // A full photo store must not prevent reading the still-existing legacy configuration.
+      try { saveJSON(DEVICE_KEYS.settings, recovered); } catch (error) {}
+    }
+    return { endpointUrl: settingsValue(recovered.endpointUrl), pin: settingsValue(recovered.pin) };
+  }
+
+  function getSettings() {
+    return ensureIntegrationSettings();
+  }
+
+  function saveSettings(settings, options) {
+    const current = ensureIntegrationSettings();
+    const record = settingsRecord(DEVICE_KEYS.settings);
+    const next = Object.assign({}, record);
+    const explicit = options && Array.isArray(options.explicitFields) ? options.explicitFields : [];
+    const cleared = new Set(clearedSettingsFields(record));
+    ["endpointUrl", "pin"].forEach(function (field) {
+      const value = settingsValue(settings && settings[field]);
+      if (explicit.indexOf(field) !== -1) {
+        next[field] = value;
+        if (value) cleared.delete(field);
+        else cleared.add(field);
+      } else if (!current[field] && value && !cleared.has(field)) {
+        next[field] = value;
+      }
+    });
+    if (cleared.size) next.clearedFields = Array.from(cleared);
+    else delete next.clearedFields;
+    if (JSON.stringify(next) !== JSON.stringify(record)) saveJSON(DEVICE_KEYS.settings, next);
+    return getSettings();
   }
 
   function getWorkflow(carId) {
@@ -936,6 +989,7 @@
     canAccessCar,
     hasValidContext,
     getSettings,
+    ensureIntegrationSettings,
     saveSettings,
     getActiveUser,
     setActiveUser,

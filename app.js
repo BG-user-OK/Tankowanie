@@ -107,6 +107,7 @@
   let activeUserId = storage.getActiveUser();
   let activeProfileId = storage.getActiveCar();
   let settings = storage.getSettings();
+  const editedSettingsFields = new Set();
   let draft = storage.getDraft();
   let queue = storage.getQueue();
   let pendingScan = null;
@@ -222,7 +223,7 @@
   async function flushDeposits() {
     const pending = pendingDeposits();
     if (!pending.length) return;
-    const requestSettings = currentSettings({ persist: true });
+    const requestSettings = currentSettings();
     const missing = missingSettingsMessage(requestSettings);
     if (missing || !navigator.onLine) throw new Error(missing || "Wpłata czeka na połączenie.");
     for (const tx of pending) {
@@ -934,19 +935,16 @@
     };
   }
 
-  function currentSettings(options) {
+  function currentSettings() {
     const stored = storage.getSettings();
-    const endpointFromInput = els.endpointInput ? els.endpointInput.value.trim() : "";
-    const pinFromInput = els.pinInput ? els.pinInput.value.trim() : "";
     settings = {
-      endpointUrl: endpointFromInput || stored.endpointUrl || "",
-      pin: pinFromInput || stored.pin || "",
+      endpointUrl: stored.endpointUrl,
+      pin: stored.pin,
       profileId: activeProfile().profileId,
       carId: activeProfileId,
       vehicleId: activeProfileId,
       userId: activeUserId
     };
-    if (options && options.persist) storage.saveSettings(settings);
     return settings;
   }
 
@@ -959,7 +957,6 @@
 
   function saveAll() {
     if (!storage.hasValidContext()) return;
-    storage.saveSettings(settings);
     draft = storage.saveDraft(draft);
     storage.saveQueue(queue);
     if (pendingScan) storage.savePendingScan(pendingScan);
@@ -1492,8 +1489,9 @@
     renderResults();
     renderTotals();
 
-    els.endpointInput.value = settings.endpointUrl || "";
-    els.pinInput.value = settings.pin || "";
+    Object.assign(settings, storage.getSettings());
+    if (!editedSettingsFields.has("endpointUrl")) els.endpointInput.value = settings.endpointUrl;
+    if (!editedSettingsFields.has("pin")) els.pinInput.value = settings.pin;
     if (els.appVersionLabel) els.appVersionLabel.textContent = storage.APP_VERSION;
     if (els.profileFooterText) {
       const footerText = isOnProfile(activeProfileId)
@@ -1684,7 +1682,7 @@
     const silent = !!(options && options.silent);
     const context = options && options.context ? options.context : configRequestContext();
     latestConfigRequestByCar[context.carId] = context.requestId;
-    const syncSettings = Object.assign({}, currentSettings({ persist: true }), context);
+    const syncSettings = Object.assign({}, currentSettings(), context);
     const missing = missingSettingsMessage(syncSettings);
     if (missing) {
       if (!silent) {
@@ -2298,7 +2296,7 @@
     const currentRecord = findReceiptScan(record && record.entryId, record && record.carId);
     if (!currentRecord || currentRecord.status !== "ready") return null;
     if (receiptUploads.has(currentRecord.entryId)) return null;
-    const syncSettings = currentSettings({ persist: true });
+    const syncSettings = currentSettings();
     const missing = missingSettingsMessage(syncSettings);
     if (missing) {
       toast(`Skan czeka lokalnie. ${missing}`);
@@ -2363,7 +2361,7 @@
   async function tryUploadReceiptScansForReceipt(receipt, syncSettings) {
     const record = updateReceiptRowFromReceipt(receipt);
     if (!record || record.status !== "ready" || !record.base64 || !record.row) return null;
-    const activeSettings = syncSettings || currentSettings({ persist: true });
+    const activeSettings = syncSettings || currentSettings();
     const missing = missingSettingsMessage(activeSettings);
     if (missing || !navigator.onLine) return null;
     return uploadReceiptScanRecord(record);
@@ -2473,7 +2471,7 @@
       saveAll();
       setActiveEdit("odometer");
       if (trackReceipt && !priorSessionReceipt) showReceiptDecision(entry.entryId);
-      const syncSettings = currentSettings({ persist: true });
+      const syncSettings = currentSettings();
       const missing = missingSettingsMessage(syncSettings);
       if (!missing && navigator.onLine) {
         syncRefuelQueue(entry.carId).catch(function (error) {
@@ -2520,7 +2518,7 @@
     if (running) return running.promise;
     const entries = storage.getQueue(car);
     if (!entries.length) return Promise.resolve(0);
-    const storedSettings = currentSettings({ persist: true });
+    const storedSettings = currentSettings();
     const syncSettings = Object.assign({}, storedSettings, {
       carId: car,
       vehicleId: car,
@@ -2651,6 +2649,7 @@
     els.cancelDepositButton.addEventListener("click", closeDeposit);
     window.addEventListener("storage", function (event) {
       if (event.key && event.key.startsWith("tankowanie_v2__balance__")) render();
+      if (event.key === "tankowanie_v2__device__settings" || event.key === "tankowanie_v1_settings") render();
     });
     window.addEventListener("online", function () {
       updateOnlineState();
@@ -2794,11 +2793,15 @@
       els.settingsPanel.hidden = !els.settingsPanel.hidden;
     });
 
+    els.endpointInput.addEventListener("input", function () { editedSettingsFields.add("endpointUrl"); });
+    els.pinInput.addEventListener("input", function () { editedSettingsFields.add("pin"); });
+
     els.saveSettingsButton.addEventListener("click", function () {
       playSound("other");
-      settings.endpointUrl = els.endpointInput.value.trim();
-      settings.pin = els.pinInput.value.trim();
-      storage.saveSettings(settings);
+      settings = storage.saveSettings({
+        endpointUrl: els.endpointInput.value.trim(), pin: els.pinInput.value.trim()
+      }, { explicitFields: Array.from(editedSettingsFields) });
+      editedSettingsFields.clear();
       render();
       toast("Ustawienia zapisane.");
       maybeAutoRefreshConfig();
@@ -2807,9 +2810,13 @@
 
     els.testSettingsButton.addEventListener("click", async function () {
       playSound("other");
-      settings.endpointUrl = els.endpointInput.value.trim();
-      settings.pin = els.pinInput.value.trim();
-      storage.saveSettings(settings);
+      const nonemptyEdits = Array.from(editedSettingsFields).filter(function (field) {
+        return (field === "endpointUrl" ? els.endpointInput : els.pinInput).value.trim();
+      });
+      settings = storage.saveSettings({
+        endpointUrl: els.endpointInput.value.trim(), pin: els.pinInput.value.trim()
+      }, { explicitFields: nonemptyEdits });
+      nonemptyEdits.forEach(function (field) { editedSettingsFields.delete(field); });
       try {
         await sync.ping(settings);
         try {
